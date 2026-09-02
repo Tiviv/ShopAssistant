@@ -1,0 +1,434 @@
+{
+  "settings": {
+    "companyName": "Свежо и Вкусно",
+    "eik": "",
+    "vatNumber": "",
+    "address": "гр. София",
+    "mol": "",
+    "iban": "",
+    "nextInvoiceNo": 1,
+    "nextOfferNo": 1,
+    "nextCreditNo": 1
+  },
+  "products": [
+    {
+      "id": "p001",
+      "name": "Ябълки",
+      "category": "Плодове",
+      "unit": "кг",
+      "price": 1.12,
+      "stock": 40
+    },
+    {
+      "id": "p002",
+      "name": "Банани",
+      "category": "Плодове",
+      "unit": "кг",
+      "price": 1.28,
+      "stock": 30
+    },
+    {
+      "id": "p003",
+      "name": "Портокали",
+      "category": "Плодове",
+      "unit": "кг",
+      "price": 1.43,
+      "stock": 25
+    },
+    {
+      "id": "p004",
+      "name": "Лимони",
+      "category": "Плодове",
+      "unit": "кг",
+      "price": 1.79,
+      "stock": 15
+    },
+    {
+      "id": "p005",
+      "name": "Грозде",
+      "category": "Плодове",
+      "unit": "кг",
+      "price": 2.3,
+      "stock": 12
+    },
+    {
+      "id": "p006",
+      "name": "Диня",
+      "category": "Плодове",
+      "unit": "кг",
+      "price": 0.61,
+      "stock": 20
+    },
+    {
+      "id": "p007",
+      "name": "Пъпеш",
+      "category": "Плодове",
+      "unit": "кг",
+      "price": 0.92,
+      "stock": 15
+    },
+    {
+      "id": "p008",
+      "name": "Праскови",
+      "category": "Плодове",
+      "unit": "кг",
+      "price": 1.94,
+      "stock": 15
+    },
+    {
+      "id": "p009",
+      "name": "Сливи",
+      "category": "Плодове",
+      "unit": "кг",
+      "price": 1.64,
+      "stock": 15
+    },
+    {
+      "id": "p010",
+      "name": "Ягоди",
+      "category": "Плодове",
+      "unit": "кг",
+      "price": 3.32,
+      "stock": 8
+    },
+    {
+      "id": "p011",
+      "name": "Киви",
+      "category": "Плодове",
+      "unit": "кг",
+      "price": 2.15,
+      "stock": 10
+    },
+    {
+      "id": "p012",
+      "name": "Мандарини",
+      "category": "Плодове",
+      "unit": "кг",
+      "price": 1.53,
+      "stock": 20
+    },
+    {
+      "id": "p013",
+      "name": "Домати",
+      "category": "Зеленчуци",
+      "unit": "кг",
+      "price": 1.79,
+      "stock": 30
+    },
+    {
+      "id": "p014",
+      "name": "Краставици",
+      "category": "Зеленчуци",
+      "unit": "кг",
+      "price": 1.12,
+      "stock": 25
+    },
+    {
+      "id": "p015",
+      "name": "Чушки",
+      "category": "Зеленчуци",
+      "unit": "кг",
+      "price": 1.94,
+      "stock": 20
+    },
+    {
+      "id": "p016",
+      "name": "Картофи",
+      "category": "Зеленчуци",
+      "unit": "кг",
+      "price": 0.82,
+      "stock": 50
+    },
+    {
+      "id": "p017",
+      "name": "Лук",
+      "category": "Зеленчуци",
+      "unit": "кг",
+      "price": 0.72,
+      "stock": 40
+    },
+    {
+      "id": "p018",
+      "name": "Чесън",
+      "category": "Зеленчуци",
+      "unit": "кг",
+      "price": 4.6,
+      "stock": 8
+    },
+    {
+      "id": "p019",
+      "name": "Моркови",
+      "category": "Зеленчуци",
+      "unit": "кг",
+      "price": 0.92,
+      "stock": 30
+    },
+    {
+      "id": "p020",
+      "name": "Зеле",
+      "category": "Зеленчуци",
+      "unit": "кг",
+      "price": 0.66,
+      "stock": 25
+    },
+    {
+      "id": "p021",
+      "name": "Маруля",
+      "category": "Зеленчуци",
+      "unit": "бр",
+      "price": 0.77,
+      "stock": 15
+    },
+    {
+      "id": "p022",
+      "name": "Тиквички",
+      "category": "Зеленчуци",
+      "unit": "кг",
+      "price": 1.33,
+      "stock": 18
+    },
+    {
+      "id": "p023",
+      "name": "Патладжан",
+      "category": "Зеленчуци",
+      "unit": "кг",
+      "price": 1.48,
+      "stock": 15
+    },
+    {
+      "id": "p024",
+      "name": "Кока-Кола 1.5л",
+      "category": "Напитки",
+      "unit": "бр",
+      "price": 1.64,
+      "stock": 24
+    },
+    {
+      "id": "p025",
+      "name": "Фанта 1.5л",
+      "category": "Напитки",
+      "unit": "бр",
+      "price": 1.53,
+      "stock": 24
+    },
+    {
+      "id": "p026",
+      "name": "Спрайт 1.5л",
+      "category": "Напитки",
+      "unit": "бр",
+      "price": 1.53,
+      "stock": 24
+    },
+    {
+      "id": "p027",
+      "name": "Минерална вода газирана 0.5л",
+      "category": "Напитки",
+      "unit": "бр",
+      "price": 0.56,
+      "stock": 48
+    },
+    {
+      "id": "p028",
+      "name": "Минерална вода негазирана 1.5л",
+      "category": "Напитки",
+      "unit": "бр",
+      "price": 0.66,
+      "stock": 36
+    },
+    {
+      "id": "p029",
+      "name": "Натурален сок 1л",
+      "category": "Напитки",
+      "unit": "бр",
+      "price": 2.3,
+      "stock": 12
+    },
+    {
+      "id": "p030",
+      "name": "Сол",
+      "category": "Подправки",
+      "unit": "оп",
+      "price": 0.46,
+      "stock": 20
+    },
+    {
+      "id": "p031",
+      "name": "Черен пипер",
+      "category": "Подправки",
+      "unit": "оп",
+      "price": 1.28,
+      "stock": 15
+    },
+    {
+      "id": "p032",
+      "name": "Червен пипер",
+      "category": "Подправки",
+      "unit": "оп",
+      "price": 1.18,
+      "stock": 15
+    },
+    {
+      "id": "p033",
+      "name": "Кимион",
+      "category": "Подправки",
+      "unit": "оп",
+      "price": 1.43,
+      "stock": 10
+    },
+    {
+      "id": "p034",
+      "name": "Риган",
+      "category": "Подправки",
+      "unit": "оп",
+      "price": 1.18,
+      "stock": 10
+    },
+    {
+      "id": "p035",
+      "name": "Дафинов лист",
+      "category": "Подправки",
+      "unit": "оп",
+      "price": 0.92,
+      "stock": 10
+    },
+    {
+      "id": "p036",
+      "name": "Канела",
+      "category": "Подправки",
+      "unit": "оп",
+      "price": 1.33,
+      "stock": 10
+    },
+    {
+      "id": "p037",
+      "name": "Ориз",
+      "category": "Ориз и зърнени",
+      "unit": "кг",
+      "price": 1.48,
+      "stock": 25
+    },
+    {
+      "id": "p038",
+      "name": "Леща",
+      "category": "Ориз и зърнени",
+      "unit": "кг",
+      "price": 1.74,
+      "stock": 20
+    },
+    {
+      "id": "p039",
+      "name": "Боб",
+      "category": "Ориз и зърнени",
+      "unit": "кг",
+      "price": 1.84,
+      "stock": 20
+    },
+    {
+      "id": "p040",
+      "name": "Елда",
+      "category": "Ориз и зърнени",
+      "unit": "кг",
+      "price": 1.64,
+      "stock": 10
+    },
+    {
+      "id": "p041",
+      "name": "Макарони",
+      "category": "Ориз и зърнени",
+      "unit": "оп",
+      "price": 1.07,
+      "stock": 20
+    },
+    {
+      "id": "p042",
+      "name": "Шоколад",
+      "category": "Сладки",
+      "unit": "бр",
+      "price": 1.43,
+      "stock": 20
+    },
+    {
+      "id": "p043",
+      "name": "Бисквити",
+      "category": "Сладки",
+      "unit": "оп",
+      "price": 1.12,
+      "stock": 20
+    },
+    {
+      "id": "p044",
+      "name": "Локум",
+      "category": "Сладки",
+      "unit": "кг",
+      "price": 2.3,
+      "stock": 8
+    },
+    {
+      "id": "p045",
+      "name": "Халва",
+      "category": "Сладки",
+      "unit": "кг",
+      "price": 2.66,
+      "stock": 8
+    },
+    {
+      "id": "p046",
+      "name": "Мед",
+      "category": "Сладки",
+      "unit": "кг",
+      "price": 6.14,
+      "stock": 6
+    },
+    {
+      "id": "p047",
+      "name": "Яйца (10 бр)",
+      "category": "Други",
+      "unit": "оп",
+      "price": 2.81,
+      "stock": 15
+    },
+    {
+      "id": "p048",
+      "name": "Мляко 1л",
+      "category": "Други",
+      "unit": "бр",
+      "price": 1.59,
+      "stock": 20
+    },
+    {
+      "id": "p049",
+      "name": "Кисело мляко 400г",
+      "category": "Други",
+      "unit": "бр",
+      "price": 1.23,
+      "stock": 20
+    },
+    {
+      "id": "p050",
+      "name": "Хляб",
+      "category": "Други",
+      "unit": "бр",
+      "price": 0.92,
+      "stock": 20
+    },
+    {
+      "id": "p051",
+      "name": "Сирене",
+      "category": "Други",
+      "unit": "кг",
+      "price": 8.18,
+      "stock": 10
+    },
+    {
+      "id": "p052",
+      "name": "Масло 200г",
+      "category": "Други",
+      "unit": "бр",
+      "price": 2.45,
+      "stock": 15
+    }
+  ],
+  "customers": [],
+  "documents": [],
+  "lastSaved": null
+}

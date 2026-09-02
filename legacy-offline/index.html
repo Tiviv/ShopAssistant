@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Свежо и Вкусно — управление</title>
+<style>
+  :root {
+    --bg: #faf9f6;
+    --surface: #ffffff;
+    --border: #e2e0d8;
+    --text: #2c2c2a;
+    --text-secondary: #6b6a63;
+    --text-muted: #9a988f;
+    --accent: #3b6d11;
+    --accent-bg: #eaf3de;
+    --danger: #a32d2d;
+    --danger-bg: #fcebeb;
+    --warning: #854f0b;
+    --warning-bg: #faeeda;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+  }
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 190px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 1rem 0.6rem;
+  }
+  .brand { font-weight: 600; font-size: 15px; padding: 0 0.5rem 1.2rem; }
+  .navbtn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 9px 10px;
+    margin-bottom: 3px;
+    border-radius: var(--radius);
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .navbtn.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+  .navbtn:hover:not(.active) { background: #f1f0ea; }
+  main { flex: 1; padding: 1.5rem 2rem; min-width: 0; overflow: auto; }
+  h2 { margin: 0 0 1rem; font-size: 20px; }
+  h3 { font-size: 15px; margin: 1.2rem 0 0.6rem; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem; margin-bottom: 1rem; }
+  .row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+  input, select {
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 14px;
+    background: var(--surface);
+    color: var(--text);
+  }
+  label.field { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+  .field-wrap { margin-bottom: 10px; }
+  button {
+    padding: 7px 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { background: #f1f0ea; }
+  button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+  button.primary:hover { opacity: 0.9; }
+  .grid { display: grid; gap: 10px; }
+  table.data { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.data th { text-align: left; font-size: 12px; color: var(--text-muted); font-weight: 500; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+  table.data td { padding: 8px 4px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .muted { color: var(--text-secondary); }
+  .metric { background: var(--accent-bg); border-radius: var(--radius); padding: 1rem; }
+  .metric .label { font-size: 12px; color: var(--text-secondary); }
+  .metric .value { font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 1.5rem; }
+  .pill { padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; }
+  .pill.paid { background: var(--accent-bg); color: var(--accent); }
+  .pill.unpaid { background: var(--warning-bg); color: var(--warning); }
+  .badge-low { color: var(--danger); }
+  .actions-cell { display: flex; gap: 6px; justify-content: flex-end; }
+  .item-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 30px; gap: 8px; margin-bottom: 6px; align-items: center; }
+  .print-sheet { background: white; color: #111; padding: 2rem; max-width: 700px; margin: 0 auto; border: 1px solid #ddd; }
+  .print-sheet table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .print-sheet th, .print-sheet td { padding: 6px 4px; text-align: right; }
+  .print-sheet th:first-child, .print-sheet td:first-child { text-align: left; }
+  .print-sheet thead tr { border-bottom: 1px solid #ccc; }
+  .print-sheet tbody tr { border-bottom: 1px solid #eee; }
+  .savebar { display: flex; gap: 8px; margin-top: 8px; }
+  .save-flash { font-size: 12px; color: var(--text-muted); height: 16px; margin-top: 8px; }
+  .backup-warning { background: var(--warning-bg); color: var(--warning); padding: 0.8rem 1rem; border-radius: var(--radius); font-size: 13px; margin-bottom: 1rem; }
+  @media print {
+    .no-print { display: none !important; }
+    .sidebar { display: none !important; }
+    main { padding: 0; }
+  }
+  input[type="file"] { padding: 4px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="sidebar no-print" id="sidebar"></nav>
+  <main id="content"></main>
+</div>
+
+<script>
+const UNITS = ["кг", "бр", "оп", "л", "г"];
+const CATEGORIES = ["Плодове", "Зеленчуци", "Напитки", "Подправки", "Ориз и зърнени", "Сладки", "Други"];
+const VAT_RATES = [20, 9, 0];
+const STORAGE_KEY = "shopERP_v1";
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function money(n) {
+  const v = Number(n) || 0;
+  return v.toLocaleString("bg-BG", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+function defaultState() {
+  return {
+    settings: { companyName: "", eik: "", vatNumber: "", address: "", mol: "", iban: "", nextInvoiceNo: 1, nextOfferNo: 1, nextCreditNo: 1 },
+    products: [],
+    customers: [],
+    documents: [],
+    lastSaved: null
+  };
+}
+
+let state = loadState();
+let currentTab = "dashboard";
+let editingProduct = null;
+let editingCustomer = null;
+let docForm = null;
+let printingDocId = null;
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+    return { ...defaultState(), ...parsed };
+  } catch (e) {
+    return defaultState();
+  }
+}
+
+function saveState() {
+  state.lastSaved = new Date().toISOString();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  const flash = document.getElementById("save-flash");
+  if (flash) { flash.textContent = "Запазено локално"; setTimeout(() => { if (flash) flash.textContent = ""; }, 1200); }
+}
+
+function setTab(tab) { currentTab = tab; editingProduct = null; editingCustomer = null; docForm = null; printingDocId = null; render(); }
+
+function render() {
+  renderSidebar();
+  const content = document.getElementById("content");
+  if (currentTab === "dashboard") content.innerHTML = renderDashboard();
+  else if (currentTab === "products") content.innerHTML = renderProducts();
+  else if (currentTab === "customers") content.innerHTML = renderCustomers();
+  else if (currentTab === "invoices") content.innerHTML = renderDocuments("invoice", "Фактури");
+  else if (currentTab === "offers") content.innerHTML = renderDocuments("offer", "Оферти");
+  else if (currentTab === "reports") content.innerHTML = renderReports();
+  else if (currentTab === "settings") content.innerHTML = renderSettings();
+  else if (currentTab === "backup") content.innerHTML = renderBackup();
+}
+
+function renderSidebar() {
+  const items = [
+    ["dashboard", "Начало"], ["products", "Продукти"], ["customers", "Клиенти"],
+    ["invoices", "Фактури"], ["offers", "Оферти"], ["reports", "Справки"],
+    ["settings", "Настройки"], ["backup", "Данни / Резервно копие"]
+  ];
+  document.getElementById("sidebar").innerHTML = `
+    <div class="brand">Свежо и Вкусно</div>
+    ${items.map(([id, label]) => `<button class="navbtn ${currentTab === id ? "active" : ""}" onclick="setTab('${id}')">${label}</button>`).join("")}
+    <div class="save-flash" id="save-flash"></div>
+  `;
+}
+
+// ---------- DASHBOARD ----------
+function renderDashboard() {
+  const invoices = state.documents.filter(d => d.docType === "invoice");
+  const now = new Date();
+  const thisMonth = invoices.filter(d => { const dt = new Date(d.date); return dt.getMonth() === now.getMonth() && dt.getFullYear() === now.getFullYear(); });
+  const monthTotal = thisMonth.reduce((s, d) => s + d.total, 0);
+  const unpaid = invoices.filter(d => !d.paid);
+  const recent = state.documents.slice(-5).reverse();
+  return `
+    <h2>Начало</h2>
+    <div class="metrics-grid">
+      <div class="metric"><div class="label">Оборот този месец</div><div class="value">${money(monthTotal)}</div></div>
+      <div class="metric"><div class="label">Фактури този месец</div><div class="value">${thisMonth.length}</div></div>
+      <div class="metric"><div class="label">Неплатени фактури</div><div class="value">${unpaid.length}</div></div>
+    </div>
+    <h3>Последни документи</h3>
+    ${recent.length === 0 ? '<p class="muted">Все още няма създадени документи.</p>' : `
+      <table class="data"><tbody>
+        ${recent.map(d => `<tr><td>${d.docType === "invoice" ? "Фактура" : d.docType === "offer" ? "Оферта" : "Кредитно"} № ${d.number} — ${esc(d.customerName || "—")}</td><td style="text-align:right">${money(d.total)}</td></tr>`).join("")}
+      </tbody></table>
+    `}
+  `;
+}
+
+// ---------- PRODUCTS ----------
+function newProduct() { editingProduct = { id: uid(), name: "", category: CATEGORIES[0], unit: UNITS[0], price: "", stock: "" }; render(); }
+function editProduct(id) { editingProduct = { ...state.products.find(p => p.id === id) }; render(); }
+function cancelProductEdit() { editingProduct = null; render(); }
+function updateProductField(field, value) { editingProduct[field] = value; }
+function saveProduct() {
+  if (!editingProduct.name.trim()) { alert("Въведете име на продукта."); return; }
+  const exists = state.products.some(p => p.id === editingProduct.id);
+  state.products = exists ? state.products.map(p => p.id === editingProduct.id ? editingProduct : p) : [...state.products, editingProduct];
+  editingProduct = null;
+  saveState(); render();
+}
+function deleteProduct(id) { if (confirm("Изтриване на продукта?")) { state.products = state.products.filter(p => p.id !== id); saveState(); render(); } }
+
+function renderProducts() {
+  const editForm = editingProduct ? `
+    <div class="card">
+      <div class="grid" style="grid-template-columns: 2fr 1fr 1fr 1fr 1fr;">
+        <div class="field-wrap"><label class="field">Име</label><input value="${esc(editingProduct.name)}" oninput="updateProductField('name', this.value)" placeholder="напр. Домати"></div>
+        <div class="field-wrap"><label class="field">Категория</label><select onchange="updateProductField('category', this.value)">${CATEGORIES.map(c => `<option value="${c}" ${editingProduct.category === c ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+        <div class="field-wrap"><label class="field">Мярка</label><select onchange="updateProductField('unit', this.value)">${UNITS.map(u => `<option value="${u}" ${editingProduct.unit === u ? "selected" : ""}>${u}</option>`).join("")}</select></div>
+        <div class="field-wrap"><label class="field">Цена (€)</label><input type="number" step="0.01" value="${esc(editingProduct.price)}" oninput="updateProductField('price', this.value)"></div>
+        <div class="field-wrap"><label class="field">Наличност</label><input type="number" step="0.01" value="${esc(editingProduct.stock)}" oninput="updateProductField('stock', this.value)"></div>
+      </div>
+      <div class="savebar"><button class="primary" onclick="saveProduct()">Запази</button><button onclick="cancelProductEdit()">Отказ</button></div>
+    </div>
+  ` : "";
+  return `
+    <div class="row"><h2>Продукти</h2><button class="primary" onclick="newProduct()">+ Нов продукт</button></div>
+    ${editForm}
+    <table class="data">
+      <thead><tr><th>Име</th><th>Категория</th><th>Мярка</th><th>Цена</th><th>Наличност</th><th></th></tr></thead>
+      <tbody>
+        ${state.products.length === 0 ? '<tr><td colspan="6" class="muted">Няма добавени продукти.</td></tr>' : state.products.map(p => `
+          <tr>
+            <td>${esc(p.name)}</td>
+            <td class="muted">${esc(p.category)}</td>
+            <td class="muted">${esc(p.unit)}</td>
+            <td>${money(p.price)}</td>
+            <td class="${p.stock !== "" && Number(p.stock) <= 5 ? "badge-low" : "muted"}">${p.stock !== "" ? esc(p.stock) : "—"}</td>
+            <td class="actions-cell"><button onclick="editProduct('${p.id}')">Редакция</button><button onclick="deleteProduct('${p.id}')">Изтрий</button></td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+// ---------- CUSTOMERS ----------
+function newCustomer() { editingCustomer = { id: uid(), name: "", eik: "", vatNumber: "", address: "", phone: "", email: "" }; render(); }
+function editCustomer(id) { editingCustomer = { ...state.customers.find(c => c.id === id) }; render(); }
+function cancelCustomerEdit() { editingCustomer = null; render(); }
+function updateCustomerField(field, value) { editingCustomer[field] = value; }
+function saveCustomer() {
+  if (!editingCustomer.name.trim()) { alert("Въведете име на клиента."); return; }
+  const exists = state.customers.some(c => c.id === editingCustomer.id);
+  state.customers = exists ? state.customers.map(c => c.id === editingCustomer.id ? editingCustomer : c) : [...state.customers, editingCustomer];
+  editingCustomer = null;
+  saveState(); render();
+}
+function deleteCustomer(id) { if (confirm("Изтриване на клиента?")) { state.customers = state.customers.filter(c => c.id !== id); saveState(); render(); } }
+
+function renderCustomers() {
+  const editForm = editingCustomer ? `
+    <div class="card">
+      <div class="grid" style="grid-template-columns: 1fr 1fr 1fr;">
+        <div class="field-wrap"><label class="field">Име / Фирма</label><input value="${esc(editingCustomer.name)}" oninput="updateCustomerField('name', this.value)" placeholder="напр. Ресторант Витоша ЕООД"></div>
+        <div class="field-wrap"><label class="field">ЕИК</label><input value="${esc(editingCustomer.eik)}" oninput="updateCustomerField('eik', this.value)"></div>
+        <div class="field-wrap"><label class="field">ДДС номер</label><input value="${esc(editingCustomer.vatNumber)}" oninput="updateCustomerField('vatNumber', this.value)"></div>
+        <div class="field-wrap"><label class="field">Адрес</label><input value="${esc(editingCustomer.address)}" oninput="updateCustomerField('address', this.value)"></div>
+        <div class="field-wrap"><label class="field">Телефон</label><input value="${esc(editingCustomer.phone)}" oninput="updateCustomerField('phone', this.value)"></div>
+        <div class="field-wrap"><label class="field">Имейл</label><input value="${esc(editingCustomer.email)}" oninput="updateCustomerField('email', this.value)"></div>
+      </div>
+      <div class="savebar"><button class="primary" onclick="saveCustomer()">Запази</button><button onclick="cancelCustomerEdit()">Отказ</button></div>
+    </div>
+  ` : "";
+  return `
+    <div class="row"><h2>Клиенти</h2><button class="primary" onclick="newCustomer()">+ Нов клиент</button></div>
+    ${editForm}
+    <table class="data">
+      <tbody>
+        ${state.customers.length === 0 ? '<tr><td class="muted">Няма добавени клиенти.</td></tr>' : state.customers.map(c => `
+          <tr>
+            <td><div>${esc(c.name)}</div><div class="muted" style="font-size:12px;">${c.eik ? "ЕИК: " + esc(c.eik) + " " : ""}${esc(c.phone || "")}</div></td>
+            <td class="actions-cell"><button onclick="editCustomer('${c.id}')">Редакция</button><button onclick="deleteCustomer('${c.id}')">Изтрий</button></td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+// ---------- DOCUMENTS (invoices / offers) ----------
+function emptyLineItem() { return { id: uid(), productId: "", name: "", unit: "", qty: 1, price: 0 }; }
+
+function newDoc(docType) {
+  docForm = { id: uid(), docType, date: todayStr(), customerId: "", customerName: "", items: [emptyLineItem()], vatRate: 20, paid: false };
+  render();
+}
+function cancelDocForm() { docForm = null; render(); }
+function updateDocField(field, value) { docForm[field] = field === "vatRate" ? Number(value) : value; renderDocFormTotalsOnly(); }
+function addDocItem() { docForm.items.push(emptyLineItem()); render(); }
+function removeDocItem(idx) { docForm.items.splice(idx, 1); render(); }
+function updateItemField(idx, field, value) {
+  docForm.items[idx][field] = field === "qty" || field === "price" ? value : value;
+  renderDocFormTotalsOnly();
+}
+function pickProduct(idx, productId) {
+  const prod = state.products.find(p => p.id === productId);
+  docForm.items[idx].productId = productId;
+  if (prod) {
+    docForm.items[idx].name = prod.name;
+    docForm.items[idx].unit = prod.unit;
+    docForm.items[idx].price = Number(prod.price) || 0;
+    document.getElementById(`item-unit-${idx}`).value = prod.unit;
+    document.getElementById(`item-price-${idx}`).value = prod.price;
+  }
+  renderDocFormTotalsOnly();
+}
+function computeDocTotals() {
+  const subtotal = docForm.items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.price) || 0), 0);
+  const vatAmount = subtotal * (docForm.vatRate / 100);
+  return { subtotal, vatAmount, total: subtotal + vatAmount };
+}
+function renderDocFormTotalsOnly() {
+  const t = computeDocTotals();
+  const el = document.getElementById("doc-totals");
+  if (el) el.innerHTML = `
+    <div>Данъчна основа: ${money(t.subtotal)}</div>
+    <div>ДДС (${docForm.vatRate}%): ${money(t.vatAmount)}</div>
+    <div style="font-weight:600;">Общо: ${money(t.total)}</div>
+  `;
+}
+function saveDoc() {
+  if (docForm.items.every(it => !it.name)) { alert("Добавете поне един продукт."); return; }
+  const customer = state.customers.find(c => c.id === docForm.customerId);
+  const t = computeDocTotals();
+  let number;
+  if (docForm.docType === "invoice") { number = state.settings.nextInvoiceNo; state.settings.nextInvoiceNo++; }
+  else { number = state.settings.nextOfferNo; state.settings.nextOfferNo++; }
+  const doc = {
+    ...docForm, number,
+    customerName: customer ? customer.name : (docForm.customerName || "Без данни"),
+    customerSnapshot: customer || null,
+    subtotal: t.subtotal, vatAmount: t.vatAmount, total: t.total,
+    createdAt: new Date().toISOString()
+  };
+  state.documents.push(doc);
+  docForm = null;
+  saveState(); render();
+}
+function convertToInvoice(id) {
+  const offer = state.documents.find(d => d.id === id);
+  const number = state.settings.nextInvoiceNo;
+  const invoice = { ...offer, id: uid(), docType: "invoice", number, date: todayStr(), convertedFromOfferId: offer.id, createdAt: new Date().toISOString() };
+  state.settings.nextInvoiceNo++;
+  state.documents.push(invoice);
+  saveState(); render();
+}
+function issueCreditNote(id) {
+  const invoice = state.documents.find(d => d.id === id);
+  const number = state.settings.nextCreditNo;
+  const credit = {
+    ...invoice, id: uid(), docType: "credit", number, date: todayStr(),
+    relatedInvoiceNumber: invoice.number,
+    subtotal: -invoice.subtotal, vatAmount: -invoice.vatAmount, total: -invoice.total,
+    items: invoice.items.map(it => ({ ...it, qty: -Math.abs(Number(it.qty)) })),
+    createdAt: new Date().toISOString()
+  };
+  state.settings.nextCreditNo++;
+  state.documents.push(credit);
+  saveState(); render();
+}
+function togglePaid(id) { const d = state.documents.find(d => d.id === id); d.paid = !d.paid; saveState(); render(); }
+function viewDoc(id) { printingDocId = id; render(); }
+function backFromPrint() { printingDocId = null; render(); }
+
+function exportDocsCSV(docType) {
+  const list = state.documents.filter(d => d.docType === docType);
+  const header = ["Номер", "Дата", "Клиент", "Данъчна основа", "ДДС", "Общо", "Платена"];
+  const rows = list.map(d => [d.number, d.date, d.customerName, d.subtotal.toFixed(2), d.vatAmount.toFixed(2), d.total.toFixed(2), d.paid ? "да" : "не"]);
+  const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+  downloadBlob("\uFEFF" + csv, "text/csv;charset=utf-8;", `${docType === "invoice" ? "fakturi" : "oferti"}_${todayStr()}.csv`);
+}
+
+function downloadBlob(content, mime, filename) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function renderDocuments(docType, title) {
+  if (printingDocId) return renderPrintable(state.documents.find(d => d.id === printingDocId));
+  const list = state.documents.filter(d => d.docType === docType);
+  const formHtml = docForm && docForm.docType === docType ? renderDocForm() : "";
+  return `
+    <div class="row">
+      <h2>${title}</h2>
+      <div style="display:flex; gap:8px;">
+        <button onclick="exportDocsCSV('${docType}')">Excel / CSV</button>
+        <button class="primary" onclick="newDoc('${docType}')">+ ${docType === "invoice" ? "Нова фактура" : "Нова оферта"}</button>
+      </div>
+    </div>
+    ${formHtml}
+    <table class="data">
+      <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Общо</th><th>Статус</th><th></th></tr></thead>
+      <tbody>
+        ${list.length === 0 ? '<tr><td colspan="6" class="muted">Няма създадени документи.</td></tr>' : list.slice().reverse().map(d => `
+          <tr>
+            <td>${d.number}</td>
+            <td>${d.date}</td>
+            <td>${esc(d.customerName)}</td>
+            <td>${money(d.total)}</td>
+            <td>${docType === "invoice" ? `<button class="pill ${d.paid ? "paid" : "unpaid"}" onclick="togglePaid('${d.id}')">${d.paid ? "Платена" : "Чака"}</button>` : "—"}</td>
+            <td class="actions-cell">
+              <button onclick="viewDoc('${d.id}')">Преглед / Печат</button>
+              ${docType === "offer" ? `<button onclick="convertToInvoice('${d.id}')">Във фактура</button>` : ""}
+              ${docType === "invoice" ? `<button onclick="issueCreditNote('${d.id}')">Кредитно</button>` : ""}
+            </td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderDocForm() {
+  const t = computeDocTotals();
+  return `
+    <div class="card">
+      <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom:6px;">
+        <div class="field-wrap"><label class="field">Дата</label><input type="date" value="${docForm.date}" oninput="updateDocField('date', this.value)"></div>
+        <div class="field-wrap"><label class="field">Клиент</label>
+          <select onchange="updateDocField('customerId', this.value)">
+            <option value="">Без регистриран клиент</option>
+            ${state.customers.map(c => `<option value="${c.id}" ${docForm.customerId === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field-wrap"><label class="field">ДДС ставка</label>
+          <select onchange="updateDocField('vatRate', this.value)">
+            ${VAT_RATES.map(r => `<option value="${r}" ${docForm.vatRate === r ? "selected" : ""}>${r}%</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <div class="item-row" style="font-size:12px; color: var(--text-muted);"><span>Продукт</span><span>Мярка</span><span>Кол-во</span><span>Цена</span><span></span></div>
+      ${docForm.items.map((it, idx) => `
+        <div class="item-row">
+          <select onchange="pickProduct(${idx}, this.value)">
+            <option value="">— избери продукт —</option>
+            ${state.products.map(p => `<option value="${p.id}" ${it.productId === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+          </select>
+          <input id="item-unit-${idx}" value="${esc(it.unit)}" oninput="updateItemField(${idx}, 'unit', this.value)" placeholder="мярка">
+          <input id="item-qty-${idx}" type="number" step="0.01" value="${esc(it.qty)}" oninput="updateItemField(${idx}, 'qty', this.value)">
+          <input id="item-price-${idx}" type="number" step="0.01" value="${esc(it.price)}" oninput="updateItemField(${idx}, 'price', this.value)">
+          <button onclick="removeDocItem(${idx})" title="Премахни">×</button>
+        </div>
+      `).join("")}
+      <button onclick="addDocItem()" style="margin: 6px 0 12px;">+ Добави ред</button>
+      <div id="doc-totals" style="text-align:right; margin-bottom: 10px;">
+        <div>Данъчна основа: ${money(t.subtotal)}</div>
+        <div>ДДС (${docForm.vatRate}%): ${money(t.vatAmount)}</div>
+        <div style="font-weight:600;">Общо: ${money(t.total)}</div>
+      </div>
+      <div class="savebar"><button class="primary" onclick="saveDoc()">Запази</button><button onclick="cancelDocForm()">Отказ</button></div>
+    </div>
+  `;
+}
+
+function renderPrintable(doc) {
+  const typeLabel = doc.docType === "invoice" ? "ФАКТУРА" : doc.docType === "offer" ? "ОФЕРТА" : "КРЕДИТНО ИЗВЕСТИЕ";
+  const cust = doc.customerSnapshot;
+  const s = state.settings;
+  return `
+    <div class="no-print" style="display:flex; gap:8px; margin-bottom:1rem;">
+      <button onclick="backFromPrint()">← Назад</button>
+      <button class="primary" onclick="window.print()">Печат / PDF</button>
+    </div>
+    <div class="print-sheet">
+      <div style="display:flex; justify-content:space-between; margin-bottom:1.5rem;">
+        <div>
+          <div style="font-size:20px; font-weight:600;">${typeLabel}</div>
+          <div style="font-size:14px;">№ ${String(doc.number).padStart(6, "0")}</div>
+          ${doc.relatedInvoiceNumber ? `<div style="font-size:13px;">към фактура № ${String(doc.relatedInvoiceNumber).padStart(6, "0")}</div>` : ""}
+        </div>
+        <div style="font-size:13px;">Дата: ${doc.date}</div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1.5rem; font-size:13px;">
+        <div>
+          <div style="font-weight:600; margin-bottom:4px;">Доставчик</div>
+          <div>${esc(s.companyName) || "—"}</div>
+          <div>ЕИК: ${esc(s.eik) || "—"}</div>
+          ${s.vatNumber ? `<div>ДДС №: ${esc(s.vatNumber)}</div>` : ""}
+          <div>${esc(s.address) || "—"}</div>
+          ${s.mol ? `<div>МОЛ: ${esc(s.mol)}</div>` : ""}
+        </div>
+        <div>
+          <div style="font-weight:600; margin-bottom:4px;">Получател</div>
+          <div>${esc(doc.customerName) || "—"}</div>
+          ${cust && cust.eik ? `<div>ЕИК: ${esc(cust.eik)}</div>` : ""}
+          ${cust && cust.vatNumber ? `<div>ДДС №: ${esc(cust.vatNumber)}</div>` : ""}
+          ${cust && cust.address ? `<div>${esc(cust.address)}</div>` : ""}
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Стока / услуга</th><th>Мярка</th><th>Кол-во</th><th>Ед. цена</th><th>Сума</th></tr></thead>
+        <tbody>
+          ${doc.items.filter(it => it.name).map(it => `
+            <tr>
+              <td>${esc(it.name)}</td>
+              <td>${esc(it.unit)}</td>
+              <td>${it.qty}</td>
+              <td>${money(it.price)}</td>
+              <td>${money((Number(it.qty) || 0) * (Number(it.price) || 0))}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+      <div style="text-align:right; font-size:13px; margin: 1rem 0 2rem;">
+        <div>Данъчна основа: ${money(doc.subtotal)}</div>
+        <div>ДДС (${doc.vatRate}%): ${money(doc.vatAmount)}</div>
+        <div style="font-weight:600; font-size:15px;">Общо за плащане: ${money(doc.total)}</div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:#555; margin-top:3rem;">
+        <div>Съставил: _______________</div>
+        <div>Получил: _______________</div>
+      </div>
+    </div>
+  `;
+}
+
+// ---------- REPORTS ----------
+function renderReports() {
+  const invoices = state.documents.filter(d => d.docType === "invoice");
+  const byProduct = {};
+  invoices.forEach(d => d.items.forEach(it => { if (it.name) byProduct[it.name] = (byProduct[it.name] || 0) + (Number(it.qty) || 0) * (Number(it.price) || 0); }));
+  const topProducts = Object.entries(byProduct).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const monthly = {};
+  invoices.forEach(d => { const key = d.date.slice(0, 7); monthly[key] = (monthly[key] || 0) + d.total; });
+  const monthlyList = Object.entries(monthly).sort((a, b) => a[0].localeCompare(b[0]));
+  return `
+    <h2>Справки</h2>
+    <h3>Оборот по месеци</h3>
+    <table class="data"><tbody>
+      ${monthlyList.length === 0 ? '<tr><td class="muted">Няма данни още.</td></tr>' : monthlyList.map(([m, total]) => `<tr><td>${m}</td><td style="text-align:right">${money(total)}</td></tr>`).join("")}
+    </tbody></table>
+    <h3>Топ продукти по приход</h3>
+    <table class="data"><tbody>
+      ${topProducts.length === 0 ? '<tr><td class="muted">Няма данни още.</td></tr>' : topProducts.map(([name, total]) => `<tr><td>${esc(name)}</td><td style="text-align:right">${money(total)}</td></tr>`).join("")}
+    </tbody></table>
+  `;
+}
+
+// ---------- SETTINGS ----------
+function updateSettingsField(field, value) { state.settings[field] = (field === "nextInvoiceNo" || field === "nextOfferNo" || field === "nextCreditNo") ? Number(value) : value; }
+function saveSettings() { saveState(); render(); }
+function renderSettings() {
+  const s = state.settings;
+  return `
+    <h2>Настройки на фирмата</h2>
+    <div class="card">
+      <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="field-wrap"><label class="field">Име на фирма / ЕТ</label><input value="${esc(s.companyName)}" oninput="updateSettingsField('companyName', this.value)"></div>
+        <div class="field-wrap"><label class="field">ЕИК</label><input value="${esc(s.eik)}" oninput="updateSettingsField('eik', this.value)"></div>
+        <div class="field-wrap"><label class="field">ДДС номер</label><input value="${esc(s.vatNumber)}" oninput="updateSettingsField('vatNumber', this.value)"></div>
+        <div class="field-wrap"><label class="field">МОЛ</label><input value="${esc(s.mol)}" oninput="updateSettingsField('mol', this.value)"></div>
+        <div class="field-wrap"><label class="field">Адрес</label><input value="${esc(s.address)}" oninput="updateSettingsField('address', this.value)"></div>
+        <div class="field-wrap"><label class="field">IBAN</label><input value="${esc(s.iban)}" oninput="updateSettingsField('iban', this.value)"></div>
+        <div class="field-wrap"><label class="field">Следващ номер на фактура</label><input type="number" value="${s.nextInvoiceNo}" oninput="updateSettingsField('nextInvoiceNo', this.value)"></div>
+        <div class="field-wrap"><label class="field">Следващ номер на оферта</label><input type="number" value="${s.nextOfferNo}" oninput="updateSettingsField('nextOfferNo', this.value)"></div>
+      </div>
+      <button class="primary" onclick="saveSettings()">Запази настройки</button>
+    </div>
+    <p class="muted">Съвет: обсъдете със счетоводителя дали са нужни допълнителни стъпки, преди да започнете да изпращате фактури на клиенти.</p>
+  `;
+}
+
+// ---------- BACKUP / DATA ----------
+function downloadBackup() {
+  downloadBlob(JSON.stringify(state, null, 2), "application/json", `svejo-vkusno-backup-${todayStr()}.json`);
+}
+function triggerImport() { document.getElementById("import-file-input").click(); }
+function handleImportFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (!imported.settings || !imported.products) throw new Error("bad format");
+      if (!confirm("Това ще презапише всички текущи данни на този компютър с данните от файла. Продължи?")) return;
+      state = { ...defaultState(), ...imported };
+      saveState();
+      render();
+      alert("Данните са заредени успешно.");
+    } catch (err) {
+      alert("Файлът не изглежда да е валиден резервен файл от тази програма.");
+    }
+  };
+  reader.readAsText(file);
+}
+function renderBackup() {
+  const last = state.lastSaved ? new Date(state.lastSaved).toLocaleString("bg-BG") : "никога";
+  return `
+    <h2>Данни / Резервно копие</h2>
+    <div class="backup-warning">
+      Тази програма работи офлайн и пази данните само на този компютър. За да работят двата компютъра с едни и същи данни, изтегляйте резервно копие тук в края на работния ден и го зареждайте на другия компютър — за да не се презаписват случайно данни от двете места едновременно.
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">Изтегляне на резервно копие</h3>
+      <p class="muted">Последно запазване на този компютър: ${last}</p>
+      <button class="primary" onclick="downloadBackup()">Изтегли резервно копие (JSON)</button>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">Зареждане на резервно копие</h3>
+      <p class="muted">Избери файл, изтеглен по-рано от тази програма (от този или другия компютър).</p>
+      <input type="file" id="import-file-input" accept="application/json" style="display:none" onchange="handleImportFile(this)">
+      <button onclick="triggerImport()">Качи резервно копие (JSON)</button>
+    </div>
+  `;
+}
+
+render();
+</script>
+</body>
+</html>
