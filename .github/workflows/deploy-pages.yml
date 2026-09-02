@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["claude/data-handling-strategy-amwbrf"]
+    branches: ["main"]
   workflow_dispatch: {}
 
 permissions:
