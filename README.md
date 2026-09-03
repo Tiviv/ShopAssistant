@@ -53,6 +53,14 @@ This version fixes both by moving storage to a Supabase project:
    from before — or an old backup exported from `legacy-offline/index.html`,
    to migrate existing data in.
 
+### Updating an existing project's schema
+
+`supabase/schema.sql` is safe to re-run in full any time it changes — every
+statement is written to be a no-op on things that already exist. If you
+already ran it once, just re-run the whole file again in the SQL Editor to
+pick up new tables/columns (e.g. the `payment_method` column and
+`cash_closings` table added for the Каса tab).
+
 Everyone who needs access (owner + staff) can either share that one login,
 or — if you want separate named logins later — say so and I'll add a
 `business_id` + membership table so multiple accounts can share one shop's

@@ -129,6 +129,15 @@
   .auth-toggle { text-align: center; margin-top: 12px; font-size: 13px; }
   .auth-toggle a { color: var(--accent); cursor: pointer; text-decoration: underline; }
   .sidebar-footer { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
+
+  .field-error { color: var(--danger); font-size: 11px; margin-top: 3px; }
+  .field-wrap.has-error input, .field-wrap.has-error select { border-color: var(--danger); }
+  input:disabled, select:disabled { background: var(--bg); color: var(--text-secondary); cursor: not-allowed; }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(20, 18, 14, 0.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 1rem; }
+  .modal-card { background: var(--surface); border-radius: 12px; padding: 1.5rem; max-width: 420px; width: 100%; max-height: 85vh; overflow: auto; }
+  .detail-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .detail-row .label { color: var(--text-secondary); }
 </style>
 </head>
 <body>
@@ -162,14 +171,55 @@ function money(n) {
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
+// ---------- field validation ----------
+// ЕИК (Bulstat/Commercial Register UIC): 9 digits for companies, 13 for branches/older records.
+// ДДС number: "BG" + 9 (companies) or 10 (individuals/sole traders) digits.
+// IBAN (Bulgaria): BG + 2 check digits + 4-letter bank code + 4-digit branch + 2-digit account type + 8 alphanumeric = 22 chars total.
+function digitsOnly(s) { return String(s || "").replace(/\D/g, ""); }
+function isValidEIK(s) { if (!s) return true; const d = digitsOnly(s); return d.length === 9 || d.length === 13; }
+function isValidVAT(s) { if (!s) return true; return /^BG\d{9,10}$/.test(String(s).trim().toUpperCase()); }
+function isValidIBAN(s) { if (!s) return true; return /^BG\d{2}[A-Z]{4}\d{4}\d{2}[A-Z0-9]{8}$/.test(String(s).replace(/\s/g, "").toUpperCase()); }
+function isValidPhone(s) { if (!s) return true; const d = digitsOnly(s); return d.length >= 7 && d.length <= 13; }
+function isValidEmail(s) { if (!s) return true; return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s).trim()); }
+function isValidMoney(v) { if (v === "" || v == null) return false; const n = Number(v); return !isNaN(n) && n >= 0; }
+function isValidStockValue(v) { if (v === "" || v == null) return true; const n = Number(v); return !isNaN(n) && n >= 0; }
+
+function validateProduct(p) {
+  const errs = {};
+  if (!p.name || !p.name.trim()) errs.name = "Въведете име.";
+  if (!isValidMoney(p.price)) errs.price = "Цената трябва да е число ≥ 0.";
+  if (!isValidStockValue(p.stock)) errs.stock = "Наличността трябва да е число ≥ 0.";
+  return errs;
+}
+function validateCustomer(c) {
+  const errs = {};
+  if (!c.name || !c.name.trim()) errs.name = "Въведете име.";
+  if (!isValidEIK(c.eik)) errs.eik = "ЕИК трябва да съдържа 9 или 13 цифри.";
+  if (!isValidVAT(c.vatNumber)) errs.vatNumber = "Формат: BG + 9 или 10 цифри (напр. BG123456789).";
+  if (!isValidPhone(c.phone)) errs.phone = "Телефонът трябва да съдържа 7–13 цифри.";
+  if (!isValidEmail(c.email)) errs.email = "Невалиден имейл адрес.";
+  return errs;
+}
+function validateSettings(s) {
+  const errs = {};
+  if (!isValidEIK(s.eik)) errs.eik = "ЕИК трябва да съдържа 9 или 13 цифри.";
+  if (!isValidVAT(s.vatNumber)) errs.vatNumber = "Формат: BG + 9 или 10 цифри.";
+  if (!isValidIBAN(s.iban)) errs.iban = "Формат: BG + 20 цифри/букви (общо 22 знака).";
+  return errs;
+}
+function fieldError(errs, key) { return errs[key] ? `<div class="field-error">${esc(errs[key])}</div>` : ""; }
+
 function defaultState() {
   return {
     settings: { companyName: "", eik: "", vatNumber: "", address: "", mol: "", iban: "", nextInvoiceNo: 1, nextOfferNo: 1, nextCreditNo: 1 },
     products: [],
     customers: [],
-    documents: []
+    documents: [],
+    cashClosings: []
   };
 }
+
+const PAYMENT_METHODS = { cash: "В брой", card: "С карта", bank: "Банков превод" };
 
 // ---------- row <-> app-object mapping (DB uses snake_case) ----------
 function settingsRowToObj(row) {
@@ -198,8 +248,11 @@ function docRowToObj(row) {
     customerId: row.customer_id, customerName: row.customer_name, customerSnapshot: row.customer_snapshot,
     items: row.items || [], vatRate: Number(row.vat_rate), subtotal: Number(row.subtotal), vatAmount: Number(row.vat_amount),
     total: Number(row.total), paid: row.paid, relatedInvoiceNumber: row.related_invoice_number,
-    convertedFromOfferId: row.converted_from_offer_id, createdAt: row.created_at
+    convertedFromOfferId: row.converted_from_offer_id, paymentMethod: row.payment_method || "cash", createdAt: row.created_at
   };
+}
+function cashClosingRowToObj(row) {
+  return { date: row.date, countedCash: Number(row.counted_cash), note: row.note || "", closedAt: row.closed_at };
 }
 
 // ---------- global app state ----------
@@ -220,6 +273,14 @@ let editingProduct = null;
 let editingCustomer = null;
 let docForm = null;
 let printingDocId = null;
+let productErrors = {};
+let customerErrors = {};
+let settingsErrors = {};
+let settingsEditing = false;
+let settingsSavedAt = null;
+let viewingCustomerId = null;
+let cashViewDate = todayStr();
+let cashForm = null;
 
 function loadConfig() {
   try { return JSON.parse(localStorage.getItem(CONFIG_KEY)) || null; } catch (e) { return null; }
@@ -259,13 +320,14 @@ async function loadAllData() {
   syncStatus = "syncing"; render();
   try {
     const uidUser = session.user.id;
-    const [settingsRes, productsRes, customersRes, docsRes] = await Promise.all([
+    const [settingsRes, productsRes, customersRes, docsRes, cashRes] = await Promise.all([
       supabaseClient.from("settings").select("*").eq("owner_id", uidUser).maybeSingle(),
       supabaseClient.from("products").select("*").eq("owner_id", uidUser).order("name"),
       supabaseClient.from("customers").select("*").eq("owner_id", uidUser).order("name"),
-      supabaseClient.from("documents").select("*").eq("owner_id", uidUser).order("created_at")
+      supabaseClient.from("documents").select("*").eq("owner_id", uidUser).order("created_at"),
+      supabaseClient.from("cash_closings").select("*").eq("owner_id", uidUser).order("date")
     ]);
-    if (settingsRes.error || productsRes.error || customersRes.error || docsRes.error) throw (settingsRes.error || productsRes.error || customersRes.error || docsRes.error);
+    if (settingsRes.error || productsRes.error || customersRes.error || docsRes.error || cashRes.error) throw (settingsRes.error || productsRes.error || customersRes.error || docsRes.error || cashRes.error);
 
     let settingsRow = settingsRes.data;
     if (!settingsRow) {
@@ -278,7 +340,8 @@ async function loadAllData() {
       settings: settingsRowToObj(settingsRow),
       products: productsRes.data,
       customers: customersRes.data.map(customerRowToObj),
-      documents: docsRes.data.map(docRowToObj)
+      documents: docsRes.data.map(docRowToObj),
+      cashClosings: cashRes.data.map(cashClosingRowToObj)
     };
     dataLoaded = true; offline = false; syncStatus = "online";
     cacheState();
@@ -300,6 +363,7 @@ function setupRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "customers", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("customers"))
     .on("postgres_changes", { event: "*", schema: "public", table: "documents", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("documents"))
     .on("postgres_changes", { event: "*", schema: "public", table: "settings", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("settings"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "cash_closings", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("cash_closings"))
     .subscribe();
 }
 function teardownRealtime() { if (realtimeChannel) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; } }
@@ -319,6 +383,9 @@ async function refetchTable(table) {
   } else if (table === "settings") {
     const { data, error } = await supabaseClient.from("settings").select("*").eq("owner_id", uidUser).maybeSingle();
     if (!error && data) { state.settings = settingsRowToObj(data); cacheState(); render(); }
+  } else if (table === "cash_closings") {
+    const { data, error } = await supabaseClient.from("cash_closings").select("*").eq("owner_id", uidUser).order("date");
+    if (!error) { state.cashClosings = data.map(cashClosingRowToObj); cacheState(); render(); }
   }
 }
 
@@ -405,7 +472,14 @@ function renderAuth() {
 // =========================================================================
 // Navigation / shell
 // =========================================================================
-function setTab(tab) { currentTab = tab; editingProduct = null; editingCustomer = null; docForm = null; printingDocId = null; render(); }
+function setTab(tab) {
+  currentTab = tab;
+  editingProduct = null; editingCustomer = null; docForm = null; printingDocId = null;
+  productErrors = {}; customerErrors = {}; settingsErrors = {};
+  settingsForm = null; settingsEditing = false; settingsSavedAt = null;
+  viewingCustomerId = null; cashForm = null;
+  render();
+}
 
 function render() {
   const root = document.getElementById("root");
@@ -427,6 +501,7 @@ function render() {
   else if (currentTab === "customers") content.innerHTML = renderCustomers();
   else if (currentTab === "invoices") content.innerHTML = renderDocuments("invoice", "Фактури");
   else if (currentTab === "offers") content.innerHTML = renderDocuments("offer", "Оферти");
+  else if (currentTab === "cash") content.innerHTML = renderCash();
   else if (currentTab === "reports") content.innerHTML = renderReports();
   else if (currentTab === "settings") content.innerHTML = renderSettings();
   else if (currentTab === "backup") content.innerHTML = renderBackup();
@@ -435,7 +510,7 @@ function render() {
 function renderSidebar() {
   const items = [
     ["dashboard", "Начало"], ["products", "Продукти"], ["customers", "Клиенти"],
-    ["invoices", "Фактури"], ["offers", "Оферти"], ["reports", "Справки"],
+    ["invoices", "Фактури"], ["offers", "Оферти"], ["cash", "Каса"], ["reports", "Справки"],
     ["settings", "Настройки"], ["backup", "Данни / Резервно копие"]
   ];
   const statusClass = offline ? "offline" : (syncStatus === "syncing" ? "syncing" : "online");
@@ -478,12 +553,13 @@ function renderDashboard() {
 }
 
 // ---------- PRODUCTS ----------
-function newProduct() { editingProduct = { id: null, name: "", category: CATEGORIES[0], unit: UNITS[0], price: "", stock: "" }; render(); }
-function editProduct(id) { editingProduct = { ...state.products.find(p => p.id === id) }; render(); }
-function cancelProductEdit() { editingProduct = null; render(); }
+function newProduct() { editingProduct = { id: null, name: "", category: CATEGORIES[0], unit: UNITS[0], price: "", stock: "" }; productErrors = {}; render(); }
+function editProduct(id) { editingProduct = { ...state.products.find(p => p.id === id) }; productErrors = {}; render(); }
+function cancelProductEdit() { editingProduct = null; productErrors = {}; render(); }
 function updateProductField(field, value) { editingProduct[field] = value; }
 async function saveProduct() {
-  if (!editingProduct.name.trim()) { alert("Въведете име на продукта."); return; }
+  productErrors = validateProduct(editingProduct);
+  if (Object.keys(productErrors).length) { render(); return; }
   const row = { owner_id: session.user.id, name: editingProduct.name, category: editingProduct.category, unit: editingProduct.unit, price: Number(editingProduct.price) || 0, stock: editingProduct.stock === "" ? null : Number(editingProduct.stock) };
   let res;
   if (editingProduct.id) res = await supabaseClient.from("products").update(row).eq("id", editingProduct.id).select().single();
@@ -492,7 +568,7 @@ async function saveProduct() {
   const idx = state.products.findIndex(p => p.id === res.data.id);
   if (idx >= 0) state.products[idx] = res.data; else state.products.push(res.data);
   state.products.sort((a, b) => a.name.localeCompare(b.name, "bg"));
-  editingProduct = null;
+  editingProduct = null; productErrors = {};
   cacheState(); flashSaved(true); render();
 }
 async function deleteProduct(id) {
@@ -507,11 +583,11 @@ function renderProducts() {
   const editForm = editingProduct ? `
     <div class="card">
       <div class="grid" style="grid-template-columns: 2fr 1fr 1fr 1fr 1fr;">
-        <div class="field-wrap"><label class="field">Име</label><input value="${esc(editingProduct.name)}" oninput="updateProductField('name', this.value)" placeholder="напр. Домати"></div>
+        <div class="field-wrap ${productErrors.name ? 'has-error' : ''}"><label class="field">Име</label><input value="${esc(editingProduct.name)}" oninput="updateProductField('name', this.value)" placeholder="напр. Домати">${fieldError(productErrors, "name")}</div>
         <div class="field-wrap"><label class="field">Категория</label><select onchange="updateProductField('category', this.value)">${CATEGORIES.map(c => `<option value="${c}" ${editingProduct.category === c ? "selected" : ""}>${c}</option>`).join("")}</select></div>
         <div class="field-wrap"><label class="field">Мярка</label><select onchange="updateProductField('unit', this.value)">${UNITS.map(u => `<option value="${u}" ${editingProduct.unit === u ? "selected" : ""}>${u}</option>`).join("")}</select></div>
-        <div class="field-wrap"><label class="field">Цена (€)</label><input type="number" step="0.01" value="${esc(editingProduct.price)}" oninput="updateProductField('price', this.value)"></div>
-        <div class="field-wrap"><label class="field">Наличност</label><input type="number" step="0.01" value="${esc(editingProduct.stock)}" oninput="updateProductField('stock', this.value)"></div>
+        <div class="field-wrap ${productErrors.price ? 'has-error' : ''}"><label class="field">Цена (€)</label><input type="number" step="0.01" value="${esc(editingProduct.price)}" oninput="updateProductField('price', this.value)">${fieldError(productErrors, "price")}</div>
+        <div class="field-wrap ${productErrors.stock ? 'has-error' : ''}"><label class="field">Наличност</label><input type="number" step="0.01" value="${esc(editingProduct.stock)}" oninput="updateProductField('stock', this.value)">${fieldError(productErrors, "stock")}</div>
       </div>
       <div class="savebar"><button class="primary" onclick="saveProduct()">Запази</button><button onclick="cancelProductEdit()">Отказ</button></div>
     </div>
@@ -538,12 +614,13 @@ function renderProducts() {
 }
 
 // ---------- CUSTOMERS ----------
-function newCustomer() { editingCustomer = { id: null, name: "", eik: "", vatNumber: "", address: "", phone: "", email: "" }; render(); }
-function editCustomer(id) { editingCustomer = { ...state.customers.find(c => c.id === id) }; render(); }
-function cancelCustomerEdit() { editingCustomer = null; render(); }
+function newCustomer() { editingCustomer = { id: null, name: "", eik: "", vatNumber: "", address: "", phone: "", email: "" }; customerErrors = {}; render(); }
+function editCustomer(id) { editingCustomer = { ...state.customers.find(c => c.id === id) }; customerErrors = {}; viewingCustomerId = null; render(); }
+function cancelCustomerEdit() { editingCustomer = null; customerErrors = {}; render(); }
 function updateCustomerField(field, value) { editingCustomer[field] = value; }
 async function saveCustomer() {
-  if (!editingCustomer.name.trim()) { alert("Въведете име на клиента."); return; }
+  customerErrors = validateCustomer(editingCustomer);
+  if (Object.keys(customerErrors).length) { render(); return; }
   const row = { owner_id: session.user.id, ...customerObjToRow(editingCustomer) };
   let res;
   if (editingCustomer.id) res = await supabaseClient.from("customers").update(row).eq("id", editingCustomer.id).select().single();
@@ -553,7 +630,7 @@ async function saveCustomer() {
   const idx = state.customers.findIndex(c => c.id === obj.id);
   if (idx >= 0) state.customers[idx] = obj; else state.customers.push(obj);
   state.customers.sort((a, b) => a.name.localeCompare(b.name, "bg"));
-  editingCustomer = null;
+  editingCustomer = null; customerErrors = {};
   cacheState(); flashSaved(true); render();
 }
 async function deleteCustomer(id) {
@@ -561,23 +638,47 @@ async function deleteCustomer(id) {
   const res = await supabaseClient.from("customers").delete().eq("id", id);
   if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
   state.customers = state.customers.filter(c => c.id !== id);
+  if (viewingCustomerId === id) viewingCustomerId = null;
   cacheState(); flashSaved(true); render();
+}
+function viewCustomerDetails(id) { viewingCustomerId = id; render(); }
+function closeCustomerDetails() { viewingCustomerId = null; render(); }
+
+function renderCustomerDetailsModal(c) {
+  const rows = [
+    ["Име / Фирма", c.name], ["ЕИК", c.eik || "—"], ["ДДС номер", c.vatNumber || "—"],
+    ["Адрес", c.address || "—"], ["Телефон", c.phone || "—"], ["Имейл", c.email || "—"]
+  ];
+  return `
+    <div class="modal-overlay no-print" onclick="if (event.target === this) closeCustomerDetails()">
+      <div class="modal-card">
+        <div class="row" style="margin-bottom: 0.5rem;"><h3 style="margin:0;">${esc(c.name)}</h3><button onclick="closeCustomerDetails()">×</button></div>
+        ${rows.map(([label, val]) => `<div class="detail-row"><span class="label">${label}</span><span>${esc(val)}</span></div>`).join("")}
+        <div class="savebar">
+          <button class="primary" ${offline ? "disabled" : ""} onclick="closeCustomerDetails(); editCustomer('${c.id}')">Редакция</button>
+          <button onclick="closeCustomerDetails()">Затвори</button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderCustomers() {
+  const err = customerErrors;
   const editForm = editingCustomer ? `
     <div class="card">
       <div class="grid" style="grid-template-columns: 1fr 1fr 1fr;">
-        <div class="field-wrap"><label class="field">Име / Фирма</label><input value="${esc(editingCustomer.name)}" oninput="updateCustomerField('name', this.value)" placeholder="напр. Ресторант Витоша ЕООД"></div>
-        <div class="field-wrap"><label class="field">ЕИК</label><input value="${esc(editingCustomer.eik)}" oninput="updateCustomerField('eik', this.value)"></div>
-        <div class="field-wrap"><label class="field">ДДС номер</label><input value="${esc(editingCustomer.vatNumber)}" oninput="updateCustomerField('vatNumber', this.value)"></div>
+        <div class="field-wrap ${err.name ? 'has-error' : ''}"><label class="field">Име / Фирма</label><input value="${esc(editingCustomer.name)}" oninput="updateCustomerField('name', this.value)" placeholder="напр. Ресторант Витоша ЕООД">${fieldError(err, "name")}</div>
+        <div class="field-wrap ${err.eik ? 'has-error' : ''}"><label class="field">ЕИК</label><input value="${esc(editingCustomer.eik)}" oninput="updateCustomerField('eik', this.value)">${fieldError(err, "eik")}</div>
+        <div class="field-wrap ${err.vatNumber ? 'has-error' : ''}"><label class="field">ДДС номер</label><input value="${esc(editingCustomer.vatNumber)}" oninput="updateCustomerField('vatNumber', this.value)" placeholder="BG123456789">${fieldError(err, "vatNumber")}</div>
         <div class="field-wrap"><label class="field">Адрес</label><input value="${esc(editingCustomer.address)}" oninput="updateCustomerField('address', this.value)"></div>
-        <div class="field-wrap"><label class="field">Телефон</label><input value="${esc(editingCustomer.phone)}" oninput="updateCustomerField('phone', this.value)"></div>
-        <div class="field-wrap"><label class="field">Имейл</label><input value="${esc(editingCustomer.email)}" oninput="updateCustomerField('email', this.value)"></div>
+        <div class="field-wrap ${err.phone ? 'has-error' : ''}"><label class="field">Телефон</label><input value="${esc(editingCustomer.phone)}" oninput="updateCustomerField('phone', this.value)">${fieldError(err, "phone")}</div>
+        <div class="field-wrap ${err.email ? 'has-error' : ''}"><label class="field">Имейл</label><input value="${esc(editingCustomer.email)}" oninput="updateCustomerField('email', this.value)">${fieldError(err, "email")}</div>
       </div>
       <div class="savebar"><button class="primary" onclick="saveCustomer()">Запази</button><button onclick="cancelCustomerEdit()">Отказ</button></div>
     </div>
   ` : "";
+  const viewingCustomer = viewingCustomerId ? state.customers.find(c => c.id === viewingCustomerId) : null;
   return `
     <div class="row"><h2>Клиенти</h2><button class="primary" ${offline ? "disabled" : ""} onclick="newCustomer()">+ Нов клиент</button></div>
     ${editForm}
@@ -586,11 +687,16 @@ function renderCustomers() {
         ${state.customers.length === 0 ? '<tr><td class="muted">Няма добавени клиенти.</td></tr>' : state.customers.map(c => `
           <tr>
             <td><div>${esc(c.name)}</div><div class="muted" style="font-size:12px;">${c.eik ? "ЕИК: " + esc(c.eik) + " " : ""}${esc(c.phone || "")}</div></td>
-            <td class="actions-cell"><button ${offline ? "disabled" : ""} onclick="editCustomer('${c.id}')">Редакция</button><button ${offline ? "disabled" : ""} onclick="deleteCustomer('${c.id}')">Изтрий</button></td>
+            <td class="actions-cell">
+              <button onclick="viewCustomerDetails('${c.id}')">Детайли</button>
+              <button ${offline ? "disabled" : ""} onclick="editCustomer('${c.id}')">Редакция</button>
+              <button ${offline ? "disabled" : ""} onclick="deleteCustomer('${c.id}')">Изтрий</button>
+            </td>
           </tr>
         `).join("")}
       </tbody>
     </table>
+    ${viewingCustomer ? renderCustomerDetailsModal(viewingCustomer) : ""}
   `;
 }
 
@@ -598,7 +704,7 @@ function renderCustomers() {
 function emptyLineItem() { return { id: uid(), productId: "", name: "", unit: "", qty: 1, price: 0 }; }
 
 function newDoc(docType) {
-  docForm = { docType, date: todayStr(), customerId: "", customerName: "", items: [emptyLineItem()], vatRate: 20, paid: false };
+  docForm = { docType, date: todayStr(), customerId: "", customerName: "", items: [emptyLineItem()], vatRate: 20, paid: false, paymentMethod: "cash" };
   render();
 }
 function cancelDocForm() { docForm = null; render(); }
@@ -658,7 +764,7 @@ async function saveDoc() {
     customer_name: customer ? customer.name : (docForm.customerName || "Без данни"),
     customer_snapshot: customer || null, items: docForm.items,
     vat_rate: docForm.vatRate, subtotal: t.subtotal, vat_amount: t.vatAmount, total: t.total,
-    paid: !!docForm.paid
+    paid: !!docForm.paid, payment_method: docForm.paymentMethod || "cash"
   };
   const res = await supabaseClient.from("documents").insert(row).select().single();
   if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
@@ -678,7 +784,7 @@ async function convertToInvoice(id) {
     owner_id: session.user.id, doc_type: "invoice", number, date: todayStr(),
     customer_id: offerDoc.customerId, customer_name: offerDoc.customerName, customer_snapshot: offerDoc.customerSnapshot,
     items: offerDoc.items, vat_rate: offerDoc.vatRate, subtotal: offerDoc.subtotal, vat_amount: offerDoc.vatAmount,
-    total: offerDoc.total, paid: false, converted_from_offer_id: offerDoc.id
+    total: offerDoc.total, paid: false, converted_from_offer_id: offerDoc.id, payment_method: offerDoc.paymentMethod || "cash"
   };
   const res = await supabaseClient.from("documents").insert(row).select().single();
   if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
@@ -697,7 +803,7 @@ async function issueCreditNote(id) {
     owner_id: session.user.id, doc_type: "credit", number, date: todayStr(),
     customer_id: invoice.customerId, customer_name: invoice.customerName, customer_snapshot: invoice.customerSnapshot,
     items, vat_rate: invoice.vatRate, subtotal: -invoice.subtotal, vat_amount: -invoice.vatAmount, total: -invoice.total,
-    paid: false, related_invoice_number: invoice.number
+    paid: false, related_invoice_number: invoice.number, payment_method: invoice.paymentMethod || "cash"
   };
   const res = await supabaseClient.from("documents").insert(row).select().single();
   if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
@@ -746,14 +852,15 @@ function renderDocuments(docType, title) {
     </div>
     ${formHtml}
     <table class="data">
-      <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Общо</th><th>Статус</th><th></th></tr></thead>
+      <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Общо</th>${docType === "invoice" ? "<th>Плащане</th>" : ""}<th>Статус</th><th></th></tr></thead>
       <tbody>
-        ${list.length === 0 ? '<tr><td colspan="6" class="muted">Няма създадени документи.</td></tr>' : list.slice().reverse().map(d => `
+        ${list.length === 0 ? '<tr><td colspan="7" class="muted">Няма създадени документи.</td></tr>' : list.slice().reverse().map(d => `
           <tr>
             <td>${d.number}</td>
             <td>${d.date}</td>
             <td>${esc(d.customerName)}</td>
             <td>${money(d.total)}</td>
+            ${docType === "invoice" ? `<td class="muted">${PAYMENT_METHODS[d.paymentMethod] || "В брой"}</td>` : ""}
             <td>${docType === "invoice" ? `<button class="pill ${d.paid ? "paid" : "unpaid"}" ${offline ? "disabled" : ""} onclick="togglePaid('${d.id}')">${d.paid ? "Платена" : "Чака"}</button>` : "—"}</td>
             <td class="actions-cell">
               <button onclick="viewDoc('${d.id}')">Преглед / Печат</button>
@@ -784,6 +891,13 @@ function renderDocForm() {
             ${VAT_RATES.map(r => `<option value="${r}" ${docForm.vatRate === r ? "selected" : ""}>${r}%</option>`).join("")}
           </select>
         </div>
+        ${docForm.docType === "invoice" ? `
+          <div class="field-wrap"><label class="field">Начин на плащане</label>
+            <select onchange="updateDocField('paymentMethod', this.value)">
+              ${Object.entries(PAYMENT_METHODS).map(([k, label]) => `<option value="${k}" ${docForm.paymentMethod === k ? "selected" : ""}>${label}</option>`).join("")}
+            </select>
+          </div>
+        ` : ""}
       </div>
       <div class="item-row" style="font-size:12px; color: var(--text-muted);"><span>Продукт</span><span>Мярка</span><span>Кол-во</span><span>Цена</span><span></span></div>
       ${docForm.items.map((it, idx) => `
@@ -859,6 +973,7 @@ function renderPrintable(doc) {
         </tbody>
       </table>
       <div style="text-align:right; font-size:13px; margin: 1rem 0 2rem;">
+        ${doc.docType === "invoice" ? `<div>Начин на плащане: ${PAYMENT_METHODS[doc.paymentMethod] || "В брой"}</div>` : ""}
         <div>Данъчна основа: ${money(doc.subtotal)}</div>
         <div>ДДС (${doc.vatRate}%): ${money(doc.vatAmount)}</div>
         <div style="font-weight:600; font-size:15px;">Общо за плащане: ${money(doc.total)}</div>
@@ -868,6 +983,80 @@ function renderPrintable(doc) {
         <div>Получил: _______________</div>
       </div>
     </div>
+  `;
+}
+
+// ---------- CASH REGISTER (daily close) ----------
+function computeCashSummary(date) {
+  const invoices = state.documents.filter(d => d.docType === "invoice" && d.date === date);
+  const byMethod = { cash: 0, card: 0, bank: 0 };
+  invoices.forEach(d => { const m = d.paymentMethod || "cash"; byMethod[m] = (byMethod[m] || 0) + d.total; });
+  const total = invoices.reduce((s, d) => s + d.total, 0);
+  return { byMethod, total, count: invoices.length };
+}
+function updateCashViewDate(v) { cashViewDate = v; cashForm = null; render(); }
+function beginCashEdit() {
+  const existing = state.cashClosings.find(c => c.date === cashViewDate);
+  cashForm = existing ? { countedCash: existing.countedCash, note: existing.note } : { countedCash: "", note: "" };
+  render();
+}
+function updateCashField(field, value) { cashForm[field] = value; }
+function cancelCashEdit() { cashForm = null; render(); }
+async function saveCashClosing() {
+  if (!isValidMoney(cashForm.countedCash)) { alert("Въведете валидна преброена сума (число ≥ 0)."); return; }
+  const row = { owner_id: session.user.id, date: cashViewDate, counted_cash: Number(cashForm.countedCash), note: cashForm.note || "", closed_at: new Date().toISOString() };
+  const res = await supabaseClient.from("cash_closings").upsert(row, { onConflict: "owner_id,date" }).select().single();
+  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  const obj = cashClosingRowToObj(res.data);
+  const idx = state.cashClosings.findIndex(c => c.date === obj.date);
+  if (idx >= 0) state.cashClosings[idx] = obj; else state.cashClosings.push(obj);
+  cashForm = null;
+  cacheState(); flashSaved(true); render();
+}
+function diffLabel(diff) {
+  const cls = Math.abs(diff) < 0.005 ? "muted" : "badge-low";
+  return `<span class="${cls}">${money(diff)}</span>`;
+}
+function renderCash() {
+  const summary = computeCashSummary(cashViewDate);
+  const existing = state.cashClosings.find(c => c.date === cashViewDate);
+  const editing = !!cashForm;
+  const liveDiff = editing && cashForm.countedCash !== "" && isValidMoney(cashForm.countedCash)
+    ? Number(cashForm.countedCash) - summary.byMethod.cash : null;
+  const history = state.cashClosings.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 14);
+  return `
+    <h2>Каса</h2>
+    <div class="card">
+      <div class="field-wrap" style="max-width:220px;"><label class="field">Ден</label><input type="date" value="${cashViewDate}" onchange="updateCashViewDate(this.value)"></div>
+      <div class="metrics-grid">
+        <div class="metric"><div class="label">Очаквано в брой</div><div class="value">${money(summary.byMethod.cash)}</div></div>
+        <div class="metric"><div class="label">Очаквано с карта</div><div class="value">${money(summary.byMethod.card)}</div></div>
+        <div class="metric"><div class="label">Очаквано с банков превод</div><div class="value">${money(summary.byMethod.bank)}</div></div>
+        <div class="metric"><div class="label">Общо фактурирано (${summary.count})</div><div class="value">${money(summary.total)}</div></div>
+      </div>
+      ${editing ? `
+        <div class="field-wrap"><label class="field">Преброена сума в брой (€)</label><input type="number" step="0.01" value="${esc(cashForm.countedCash)}" oninput="updateCashField('countedCash', this.value)"></div>
+        <div class="field-wrap"><label class="field">Бележка (по избор)</label><input value="${esc(cashForm.note)}" oninput="updateCashField('note', this.value)" placeholder="напр. причина за разлика"></div>
+        ${liveDiff !== null ? `<p>Разлика спрямо очакваното в брой: ${diffLabel(liveDiff)}</p>` : ""}
+        <div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveCashClosing()">Запази приключване</button><button onclick="cancelCashEdit()">Отказ</button></div>
+      ` : `
+        ${existing ? `
+          <p>Преброено в брой: <b>${money(existing.countedCash)}</b> — разлика: ${diffLabel(existing.countedCash - summary.byMethod.cash)}</p>
+          ${existing.note ? `<p class="muted">${esc(existing.note)}</p>` : ""}
+        ` : `<p class="muted">Денят още не е приключен.</p>`}
+        <button class="primary" ${offline ? "disabled" : ""} onclick="beginCashEdit()">${existing ? "Редакция на приключването" : "Приключи деня"}</button>
+      `}
+    </div>
+    <h3>История</h3>
+    <table class="data">
+      <thead><tr><th>Дата</th><th>Очаквано в брой</th><th>Преброено</th><th>Разлика</th></tr></thead>
+      <tbody>
+        ${history.length === 0 ? '<tr><td colspan="4" class="muted">Няма приключени дни още.</td></tr>' : history.map(c => {
+          const s = computeCashSummary(c.date);
+          return `<tr><td>${c.date}</td><td>${money(s.byMethod.cash)}</td><td>${money(c.countedCash)}</td><td>${diffLabel(c.countedCash - s.byMethod.cash)}</td></tr>`;
+        }).join("")}
+      </tbody>
+    </table>
   `;
 }
 
@@ -897,31 +1086,49 @@ function renderReports() {
 let settingsForm = null;
 function ensureSettingsForm() { if (!settingsForm) settingsForm = { ...state.settings }; }
 function updateSettingsField(field, value) { ensureSettingsForm(); settingsForm[field] = value; }
+function editSettings() { ensureSettingsForm(); settingsEditing = true; settingsErrors = {}; render(); }
+function cancelSettingsEdit() { settingsForm = null; settingsEditing = false; settingsErrors = {}; render(); }
 async function saveSettings() {
   ensureSettingsForm();
+  settingsErrors = validateSettings(settingsForm);
+  if (Object.keys(settingsErrors).length) { render(); return; }
   const res = await supabaseClient.from("settings").update(settingsObjToRow(settingsForm)).eq("owner_id", session.user.id).select().single();
   if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
   state.settings = settingsRowToObj(res.data);
-  settingsForm = null;
-  cacheState(); flashSaved(true); render();
+  settingsForm = null; settingsEditing = false; settingsErrors = {};
+  cacheState(); flashSaved(true);
+  settingsSavedAt = Date.now();
+  render();
+  setTimeout(() => { settingsSavedAt = null; render(); }, 4000);
 }
 function renderSettings() {
   ensureSettingsForm();
   const s = settingsForm;
+  const editing = settingsEditing;
+  const err = settingsErrors;
+  const field = (label, key, placeholder) => `
+    <div class="field-wrap ${err[key] ? "has-error" : ""}">
+      <label class="field">${label}</label>
+      <input value="${esc(s[key])}" ${placeholder ? `placeholder="${placeholder}"` : ""} ${editing ? `oninput="updateSettingsField('${key}', this.value)"` : "disabled"}>
+      ${fieldError(err, key)}
+    </div>`;
   return `
     <h2>Настройки на фирмата</h2>
+    ${settingsSavedAt ? `<div class="info-box">Настройките са запазени.</div>` : ""}
     <div class="card">
       <div class="grid" style="grid-template-columns: 1fr 1fr;">
-        <div class="field-wrap"><label class="field">Име на фирма / ЕТ</label><input value="${esc(s.companyName)}" oninput="updateSettingsField('companyName', this.value)"></div>
-        <div class="field-wrap"><label class="field">ЕИК</label><input value="${esc(s.eik)}" oninput="updateSettingsField('eik', this.value)"></div>
-        <div class="field-wrap"><label class="field">ДДС номер</label><input value="${esc(s.vatNumber)}" oninput="updateSettingsField('vatNumber', this.value)"></div>
-        <div class="field-wrap"><label class="field">МОЛ</label><input value="${esc(s.mol)}" oninput="updateSettingsField('mol', this.value)"></div>
-        <div class="field-wrap"><label class="field">Адрес</label><input value="${esc(s.address)}" oninput="updateSettingsField('address', this.value)"></div>
-        <div class="field-wrap"><label class="field">IBAN</label><input value="${esc(s.iban)}" oninput="updateSettingsField('iban', this.value)"></div>
+        ${field("Име на фирма / ЕТ", "companyName")}
+        ${field("ЕИК", "eik")}
+        ${field("ДДС номер", "vatNumber", "BG123456789")}
+        ${field("МОЛ", "mol")}
+        ${field("Адрес", "address")}
+        ${field("IBAN", "iban", "BG00XXXX00000000000000")}
         <div class="field-wrap"><label class="field">Следващ номер на фактура</label><input value="${s.nextInvoiceNo}" disabled title="Определя се автоматично от сървъра, за да не се дублират номера между устройства."></div>
         <div class="field-wrap"><label class="field">Следващ номер на оферта</label><input value="${s.nextOfferNo}" disabled></div>
       </div>
-      <button class="primary" ${offline ? "disabled" : ""} onclick="saveSettings()">Запази настройки</button>
+      ${editing
+        ? `<div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveSettings()">Запази настройки</button><button onclick="cancelSettingsEdit()">Отказ</button></div>`
+        : `<div class="savebar"><button ${offline ? "disabled" : ""} onclick="editSettings()">Редакция</button></div>`}
     </div>
     <p class="muted">Съвет: обсъдете със счетоводителя дали са нужни допълнителни стъпки, преди да започнете да изпращате фактури на клиенти.</p>
   `;
@@ -958,7 +1165,7 @@ async function handleImportFile(input) {
           owner_id: session.user.id, doc_type: d.docType, number: d.number, date: d.date,
           customer_name: d.customerName || "", customer_snapshot: d.customerSnapshot || null,
           items: d.items || [], vat_rate: d.vatRate, subtotal: d.subtotal, vat_amount: d.vatAmount, total: d.total,
-          paid: !!d.paid, related_invoice_number: d.relatedInvoiceNumber || null
+          paid: !!d.paid, related_invoice_number: d.relatedInvoiceNumber || null, payment_method: d.paymentMethod || "cash"
         }));
         const { error } = await supabaseClient.from("documents").insert(rows);
         if (error) throw error;

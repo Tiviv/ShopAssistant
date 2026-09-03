@@ -68,6 +68,29 @@ create table if not exists public.documents (
   created_at timestamptz not null default now()
 );
 
+-- "create table if not exists" above is a no-op if the table already exists
+-- (i.e. on a database that ran a previous version of this schema), so the
+-- new column needs its own idempotent statement to actually land there too.
+alter table public.documents add column if not exists payment_method text not null default 'cash';
+
+do $$
+begin
+  alter table public.documents add constraint documents_payment_method_check check (payment_method in ('cash', 'card', 'bank'));
+exception when duplicate_object then null;
+end $$;
+
+-- One row per calendar day: what the till was counted at, vs. what invoices for
+-- that day say it should hold. Lets a shop close out a day the way a physical
+-- till/Z-report would, without needing an actual POS terminal.
+create table if not exists public.cash_closings (
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  date date not null,
+  counted_cash numeric(12,2) not null default 0,
+  note text not null default '',
+  closed_at timestamptz not null default now(),
+  primary key (owner_id, date)
+);
+
 create index if not exists documents_owner_doctype_idx on public.documents (owner_id, doc_type);
 create index if not exists products_owner_idx on public.products (owner_id);
 create index if not exists customers_owner_idx on public.customers (owner_id);
@@ -79,6 +102,7 @@ alter table public.settings enable row level security;
 alter table public.products enable row level security;
 alter table public.customers enable row level security;
 alter table public.documents enable row level security;
+alter table public.cash_closings enable row level security;
 
 drop policy if exists "own settings" on public.settings;
 create policy "own settings" on public.settings
@@ -94,6 +118,10 @@ create policy "own customers" on public.customers
 
 drop policy if exists "own documents" on public.documents;
 create policy "own documents" on public.documents
+  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+drop policy if exists "own cash closings" on public.cash_closings;
+create policy "own cash closings" on public.cash_closings
   for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
 -- ---------------------------------------------------------------------
@@ -205,5 +233,11 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.settings;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.cash_closings;
 exception when duplicate_object then null;
 end $$;
