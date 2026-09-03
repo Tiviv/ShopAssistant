@@ -281,6 +281,8 @@ let settingsSavedAt = null;
 let viewingCustomerId = null;
 let cashViewDate = todayStr();
 let cashForm = null;
+let creditForm = null;
+let creditFormError = "";
 
 function loadConfig() {
   try { return JSON.parse(localStorage.getItem(CONFIG_KEY)) || null; } catch (e) { return null; }
@@ -478,6 +480,7 @@ function setTab(tab) {
   productErrors = {}; customerErrors = {}; settingsErrors = {};
   settingsForm = null; settingsEditing = false; settingsSavedAt = null;
   viewingCustomerId = null; cashForm = null;
+  creditForm = null; creditFormError = "";
   render();
 }
 
@@ -705,6 +708,7 @@ function emptyLineItem() { return { id: uid(), productId: "", name: "", unit: ""
 
 function newDoc(docType) {
   docForm = { docType, date: todayStr(), customerId: "", customerName: "", items: [emptyLineItem()], vatRate: 20, paid: false, paymentMethod: "cash" };
+  creditForm = null; creditFormError = "";
   render();
 }
 function cancelDocForm() { docForm = null; render(); }
@@ -778,6 +782,7 @@ async function saveDoc() {
 
 async function convertToInvoice(id) {
   const offerDoc = state.documents.find(d => d.id === id);
+  if (!confirm(`Превръщане на оферта № ${offerDoc.number} (${money(offerDoc.total)}) във фактура?`)) return;
   const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: "invoice" });
   if (numErr) { flashSaved(false, "Грешка: " + numErr.message); return; }
   const row = {
@@ -792,25 +797,86 @@ async function convertToInvoice(id) {
   cacheState(); flashSaved(true); render();
   await applyStockAdjustments(row.items);
   await refetchTable("settings");
+  alert(`Издадена фактура № ${number} от оферта № ${offerDoc.number}.`);
 }
 
-async function issueCreditNote(id) {
-  const invoice = state.documents.find(d => d.id === id);
+// A credit note defaults to crediting every line at its full sold quantity
+// (so a full return/void is still a single click), but each quantity is
+// editable — set unwanted lines to 0 and reduce others for a partial return
+// (e.g. the customer only sends the bananas back).
+function beginCreditNote(invoiceId) {
+  const invoice = state.documents.find(d => d.id === invoiceId);
+  if (!invoice) return;
+  docForm = null;
+  creditForm = {
+    invoiceId,
+    items: invoice.items.filter(it => it.name).map(it => ({ ...it, creditQty: it.qty }))
+  };
+  creditFormError = "";
+  render();
+}
+function cancelCreditForm() { creditForm = null; creditFormError = ""; render(); }
+function updateCreditQty(idx, value) { creditForm.items[idx].creditQty = value; renderCreditFormTotalsOnly(); }
+function computeCreditTotals() {
+  const invoice = state.documents.find(d => d.id === creditForm.invoiceId);
+  const selected = creditForm.items.filter(it => isValidMoney(it.creditQty) && Number(it.creditQty) > 0);
+  const subtotal = selected.reduce((s, it) => s + Number(it.creditQty) * Number(it.price), 0);
+  const vatAmount = subtotal * (invoice.vatRate / 100);
+  return { subtotal, vatAmount, total: subtotal + vatAmount, selected };
+}
+function renderCreditFormTotalsOnly() {
+  const t = computeCreditTotals();
+  const el = document.getElementById("credit-totals");
+  if (el) el.innerHTML = `
+    <div>Данъчна основа: ${money(t.subtotal)}</div>
+    <div>ДДС: ${money(t.vatAmount)}</div>
+    <div style="font-weight:600;">Общо: ${money(t.total)}</div>
+  `;
+}
+async function saveCreditNote() {
+  const invoice = state.documents.find(d => d.id === creditForm.invoiceId);
+  for (const it of creditForm.items) {
+    if (!isValidMoney(it.creditQty)) { creditFormError = `Невалидно количество за „${it.name}“.`; render(); return; }
+    if (Number(it.creditQty) > Number(it.qty) + 1e-9) { creditFormError = `Количеството за „${it.name}“ не може да е повече от продаденото (${it.qty}).`; render(); return; }
+  }
+  const t = computeCreditTotals();
+  if (t.selected.length === 0) { creditFormError = "Изберете количество поне за един продукт."; render(); return; }
+  creditFormError = "";
+  if (!confirm(`Издаване на кредитно известие за ${t.selected.length} артикул(а) на стойност ${money(t.total)} към фактура № ${invoice.number}?`)) return;
+
   const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: "credit" });
   if (numErr) { flashSaved(false, "Грешка: " + numErr.message); return; }
-  const items = invoice.items.map(it => ({ ...it, qty: -Math.abs(Number(it.qty)) }));
+  const items = t.selected.map(it => ({ id: it.id, productId: it.productId, name: it.name, unit: it.unit, price: it.price, qty: -Math.abs(Number(it.creditQty)) }));
   const row = {
     owner_id: session.user.id, doc_type: "credit", number, date: todayStr(),
     customer_id: invoice.customerId, customer_name: invoice.customerName, customer_snapshot: invoice.customerSnapshot,
-    items, vat_rate: invoice.vatRate, subtotal: -invoice.subtotal, vat_amount: -invoice.vatAmount, total: -invoice.total,
+    items, vat_rate: invoice.vatRate, subtotal: -t.subtotal, vat_amount: -t.vatAmount, total: -t.total,
     paid: false, related_invoice_number: invoice.number, payment_method: invoice.paymentMethod || "cash"
   };
   const res = await supabaseClient.from("documents").insert(row).select().single();
   if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
   state.documents.push(docRowToObj(res.data));
+  creditForm = null;
   cacheState(); flashSaved(true); render();
   await applyStockAdjustments(items);
   await refetchTable("settings");
+  alert(`Издадено кредитно известие № ${number} към фактура № ${invoice.number}.`);
+}
+
+async function deleteDocument(id) {
+  const d = state.documents.find(x => x.id === id);
+  if (!d) return;
+  const typeLabel = d.docType === "invoice" ? "фактура" : d.docType === "offer" ? "оферта" : "кредитно известие";
+  const stockNote = d.docType !== "offer" ? " Наличностите на засегнатите продукти ще бъдат коригирани обратно." : "";
+  if (!confirm(`Изтриване на ${typeLabel} № ${d.number} (${money(d.total)})? Номерът няма да бъде преизползван.${stockNote}`)) return;
+  const res = await supabaseClient.from("documents").delete().eq("id", id);
+  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  state.documents = state.documents.filter(x => x.id !== id);
+  cacheState(); flashSaved(true); render();
+  if (d.docType !== "offer") {
+    const reversedItems = d.items.map(it => ({ ...it, qty: -Number(it.qty) }));
+    await applyStockAdjustments(reversedItems);
+  }
 }
 
 async function togglePaid(id) {
@@ -840,8 +906,13 @@ function downloadBlob(content, mime, filename) {
 
 function renderDocuments(docType, title) {
   if (printingDocId) return renderPrintable(state.documents.find(d => d.id === printingDocId));
-  const list = state.documents.filter(d => d.docType === docType);
+  // Credit notes belong conceptually to the invoice they reverse, so they're
+  // shown inline in the Фактури list rather than hidden with no view at all.
+  const list = docType === "invoice"
+    ? state.documents.filter(d => d.docType === "invoice" || d.docType === "credit")
+    : state.documents.filter(d => d.docType === docType);
   const formHtml = docForm && docForm.docType === docType ? renderDocForm() : "";
+  const creditFormHtml = docType === "invoice" && creditForm ? renderCreditForm() : "";
   return `
     <div class="row">
       <h2>${title}</h2>
@@ -851,24 +922,32 @@ function renderDocuments(docType, title) {
       </div>
     </div>
     ${formHtml}
+    ${creditFormHtml}
     <table class="data">
       <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Общо</th>${docType === "invoice" ? "<th>Плащане</th>" : ""}<th>Статус</th><th></th></tr></thead>
       <tbody>
-        ${list.length === 0 ? '<tr><td colspan="7" class="muted">Няма създадени документи.</td></tr>' : list.slice().reverse().map(d => `
+        ${list.length === 0 ? `<tr><td colspan="${docType === "invoice" ? 7 : 6}" class="muted">Няма създадени документи.</td></tr>` : list.slice().reverse().map(d => {
+          const isCredit = d.docType === "credit";
+          return `
           <tr>
-            <td>${d.number}</td>
+            <td>${isCredit ? `<span class="badge-low">КИ № ${d.number}</span>` : d.number}</td>
             <td>${d.date}</td>
             <td>${esc(d.customerName)}</td>
-            <td>${money(d.total)}</td>
+            <td class="${isCredit ? "badge-low" : ""}">${money(d.total)}</td>
             ${docType === "invoice" ? `<td class="muted">${PAYMENT_METHODS[d.paymentMethod] || "В брой"}</td>` : ""}
-            <td>${docType === "invoice" ? `<button class="pill ${d.paid ? "paid" : "unpaid"}" ${offline ? "disabled" : ""} onclick="togglePaid('${d.id}')">${d.paid ? "Платена" : "Чака"}</button>` : "—"}</td>
+            <td>${
+              isCredit ? `<span class="muted">към № ${d.relatedInvoiceNumber}</span>`
+              : docType === "invoice" ? `<button class="pill ${d.paid ? "paid" : "unpaid"}" ${offline ? "disabled" : ""} onclick="togglePaid('${d.id}')">${d.paid ? "Платена" : "Чака"}</button>`
+              : "—"
+            }</td>
             <td class="actions-cell">
               <button onclick="viewDoc('${d.id}')">Преглед / Печат</button>
               ${docType === "offer" ? `<button ${offline ? "disabled" : ""} onclick="convertToInvoice('${d.id}')">Във фактура</button>` : ""}
-              ${docType === "invoice" ? `<button ${offline ? "disabled" : ""} onclick="issueCreditNote('${d.id}')">Кредитно</button>` : ""}
+              ${docType === "invoice" && !isCredit ? `<button ${offline ? "disabled" : ""} onclick="beginCreditNote('${d.id}')">Кредитно</button>` : ""}
+              <button class="danger" ${offline ? "disabled" : ""} onclick="deleteDocument('${d.id}')">Изтрий</button>
             </td>
           </tr>
-        `).join("")}
+        `; }).join("")}
       </tbody>
     </table>
   `;
@@ -919,6 +998,36 @@ function renderDocForm() {
         <div style="font-weight:600;">Общо: ${money(t.total)}</div>
       </div>
       <div class="savebar"><button class="primary" onclick="saveDoc()">Запази</button><button onclick="cancelDocForm()">Отказ</button></div>
+    </div>
+  `;
+}
+
+function renderCreditForm() {
+  const invoice = state.documents.find(d => d.id === creditForm.invoiceId);
+  if (!invoice) { creditForm = null; return ""; }
+  const t = computeCreditTotals();
+  return `
+    <div class="card">
+      <h3 style="margin-top:0;">Кредитно известие към фактура № ${invoice.number}</h3>
+      <p class="muted" style="font-size:13px;">По подразбиране са зададени продадените количества — намалете или занулете редовете, които не се връщат.</p>
+      ${creditFormError ? `<div class="error-box">${esc(creditFormError)}</div>` : ""}
+      <div class="item-row" style="grid-template-columns: 2fr 1fr 1fr 1fr; font-size:12px; color: var(--text-muted);">
+        <span>Продукт</span><span>Продадено</span><span>За кредитиране</span><span>Цена</span>
+      </div>
+      ${creditForm.items.map((it, idx) => `
+        <div class="item-row" style="grid-template-columns: 2fr 1fr 1fr 1fr;">
+          <span>${esc(it.name)}</span>
+          <span class="muted">${it.qty} ${esc(it.unit)}</span>
+          <input type="number" step="0.01" min="0" max="${it.qty}" value="${esc(it.creditQty)}" oninput="updateCreditQty(${idx}, this.value)">
+          <span class="muted">${money(it.price)}</span>
+        </div>
+      `).join("")}
+      <div id="credit-totals" style="text-align:right; margin: 10px 0;">
+        <div>Данъчна основа: ${money(t.subtotal)}</div>
+        <div>ДДС: ${money(t.vatAmount)}</div>
+        <div style="font-weight:600;">Общо: ${money(t.total)}</div>
+      </div>
+      <div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveCreditNote()">Издай кредитно известие</button><button onclick="cancelCreditForm()">Отказ</button></div>
     </div>
   `;
 }
