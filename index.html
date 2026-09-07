@@ -538,7 +538,13 @@ async function doUpdatePassword() {
   authBusy = true; authError = ""; render();
   const { error } = await supabaseClient.auth.updateUser({ password: newPasswordForm.password });
   authBusy = false;
-  if (error) { authError = error.message; render(); return; }
+  if (error) {
+    authError = /session missing|session_not_found|Auth session/i.test(error.message)
+      ? "Линкът вече не е валиден (изтекъл, вече използван, или отворен на друго устройство). Поискайте нов линк."
+      : error.message;
+    render();
+    return;
+  }
   newPasswordForm = { password: "", confirm: "" };
   recoveryMode = false;
   history.replaceState({}, "", location.pathname);
@@ -599,6 +605,23 @@ function renderAuth() {
 }
 
 function renderNewPassword() {
+  // The recovery link is only usable if it actually established a session.
+  // Without this check the form would look fine and then fail on save with
+  // an opaque "Auth session missing" from Supabase.
+  if (!session) {
+    return `
+      <div class="auth-wrap">
+        <div class="auth-card">
+          <h2>Линкът не е валиден</h2>
+          <div class="error-box">Линкът за нова парола не е активен — най-често защото е изтекъл, вече е бил използван веднъж, или е отворен на устройство, различно от това, на което е поискан.</div>
+          <p class="muted" style="font-size:13px;">Поискайте нов линк и го отворете на същото устройство, на което го заявявате.</p>
+          <button class="primary" style="width:100%;" onclick="cancelRecovery(); switchAuthScreen('reset')">Поискай нов линк</button>
+          <div class="auth-toggle"><a onclick="cancelRecovery()">Назад към вход</a></div>
+          <div class="auth-toggle"><a onclick="forgetConnection()">Смяна на Supabase връзка</a></div>
+        </div>
+      </div>
+    `;
+  }
   return `
     <div class="auth-wrap">
       <div class="auth-card">
