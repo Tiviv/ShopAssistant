@@ -161,11 +161,56 @@
     .sidebar-overlay.open {
       display: block; position: fixed; inset: 0; background: rgba(20, 18, 14, 0.4); z-index: 55;
     }
-    main { padding: 1rem; }
+    main { padding: 0.85rem; }
+    h2 { font-size: 18px; margin-bottom: 0.8rem; }
     .row { flex-direction: column; align-items: flex-start; gap: 10px; }
     .grid, .item-row { grid-template-columns: 1fr !important; }
-    .metrics-grid { grid-template-columns: 1fr !important; }
+    /* Two compact tiles per row instead of one full-width block each,
+       so the day's numbers are visible without scrolling. */
+    .metrics-grid { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 1rem; }
+    .metric { padding: 0.6rem 0.7rem; }
+    .metric .label { font-size: 11px; }
+    .metric .value { font-size: 17px; }
+    .card { padding: 0.85rem 0.9rem; }
+    table.data td, table.data th { padding: 7px 3px; }
     .actions-cell { flex-wrap: wrap; justify-content: flex-start; }
+
+    /* Wide tables don't fit a phone no matter how much they're squeezed, so
+       each row becomes a stacked card with its column name as the label. */
+    table.mobile-cards thead { display: none; }
+    table.mobile-cards, table.mobile-cards tbody { display: block; }
+    table.mobile-cards tr {
+      display: block;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 11px;
+      margin-bottom: 8px;
+    }
+    table.mobile-cards td {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      border: none;
+      padding: 3px 0;
+      text-align: right;
+    }
+    table.mobile-cards td::before {
+      content: attr(data-label);
+      color: var(--text-muted);
+      font-size: 12px;
+      text-align: left;
+      flex-shrink: 0;
+    }
+    table.mobile-cards td.actions-cell {
+      justify-content: flex-start;
+      padding-top: 8px;
+      margin-top: 4px;
+      border-top: 1px solid var(--border);
+    }
+    table.mobile-cards td.actions-cell::before { content: none; }
+    table.mobile-cards td.actions-cell button { flex: 1; min-width: 90px; }
   }
 </style>
 </head>
@@ -775,16 +820,16 @@ function renderProducts() {
     <div class="row"><h2>Продукти</h2><button class="primary" ${offline ? "disabled" : ""} onclick="newProduct()">+ Нов продукт</button></div>
     ${editForm}
     <div class="table-scroll">
-    <table class="data">
+    <table class="data mobile-cards">
       <thead><tr><th>Име</th><th>Категория</th><th>Мярка</th><th>Цена</th><th>Наличност</th><th></th></tr></thead>
       <tbody>
         ${state.products.length === 0 ? '<tr><td colspan="6" class="muted">Няма добавени продукти.</td></tr>' : state.products.map(p => `
           <tr>
-            <td>${esc(p.name)}</td>
-            <td class="muted">${esc(p.category)}</td>
-            <td class="muted">${esc(p.unit)}</td>
-            <td>${money(p.price)}</td>
-            <td class="${p.stock !== null && p.stock !== "" && Number(p.stock) <= 5 ? "badge-low" : "muted"}">${p.stock !== null && p.stock !== "" ? esc(p.stock) : "—"}</td>
+            <td data-label="Име">${esc(p.name)}</td>
+            <td class="muted" data-label="Категория">${esc(p.category)}</td>
+            <td class="muted" data-label="Мярка">${esc(p.unit)}</td>
+            <td data-label="Цена">${money(p.price)}</td>
+            <td data-label="Наличност" class="${p.stock !== null && p.stock !== "" && Number(p.stock) <= 5 ? "badge-low" : "muted"}">${p.stock !== null && p.stock !== "" ? esc(p.stock) : "—"}</td>
             <td class="actions-cell"><button ${offline ? "disabled" : ""} onclick="editProduct('${p.id}')">Редакция</button><button ${offline ? "disabled" : ""} onclick="deleteProduct('${p.id}')">Изтрий</button></td>
           </tr>
         `).join("")}
@@ -864,11 +909,11 @@ function renderCustomers() {
     <div class="row"><h2>Клиенти</h2><button class="primary" ${offline ? "disabled" : ""} onclick="newCustomer()">+ Нов клиент</button></div>
     ${editForm}
     <div class="table-scroll">
-    <table class="data">
+    <table class="data mobile-cards">
       <tbody>
         ${state.customers.length === 0 ? '<tr><td class="muted">Няма добавени клиенти.</td></tr>' : state.customers.map(c => `
           <tr>
-            <td><div>${esc(c.name)}</div><div class="muted" style="font-size:12px;">${c.eik ? "ЕИК: " + esc(c.eik) + " " : ""}${esc(c.phone || "")}</div></td>
+            <td style="text-align:left;"><div>${esc(c.name)}</div><div class="muted" style="font-size:12px;">${c.eik ? "ЕИК: " + esc(c.eik) + " " : ""}${esc(c.phone || "")}</div></td>
             <td class="actions-cell">
               <button onclick="viewCustomerDetails('${c.id}')">Детайли</button>
               <button ${offline ? "disabled" : ""} onclick="editCustomer('${c.id}')">Редакция</button>
@@ -1104,19 +1149,19 @@ function renderDocuments(docType, title) {
     ${formHtml}
     ${creditFormHtml}
     <div class="table-scroll">
-    <table class="data">
+    <table class="data mobile-cards">
       <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Общо</th>${docType === "invoice" ? "<th>Плащане</th>" : ""}<th>Статус</th><th></th></tr></thead>
       <tbody>
         ${list.length === 0 ? `<tr><td colspan="${docType === "invoice" ? 7 : 6}" class="muted">Няма създадени документи.</td></tr>` : list.slice().reverse().map(d => {
           const isCredit = d.docType === "credit";
           return `
           <tr>
-            <td>${isCredit ? `<span class="badge-low">КИ № ${d.number}</span>` : d.number}</td>
-            <td>${d.date}</td>
-            <td>${esc(d.customerName)}</td>
-            <td class="${isCredit ? "badge-low" : ""}">${money(d.total)}</td>
-            ${docType === "invoice" ? `<td class="muted">${PAYMENT_METHODS[d.paymentMethod] || "В брой"}</td>` : ""}
-            <td>${
+            <td data-label="№">${isCredit ? `<span class="badge-low">КИ № ${d.number}</span>` : d.number}</td>
+            <td data-label="Дата">${d.date}</td>
+            <td data-label="Клиент">${esc(d.customerName)}</td>
+            <td data-label="Общо" class="${isCredit ? "badge-low" : ""}">${money(d.total)}</td>
+            ${docType === "invoice" ? `<td class="muted" data-label="Плащане">${PAYMENT_METHODS[d.paymentMethod] || "В брой"}</td>` : ""}
+            <td data-label="Статус">${
               isCredit ? `<span class="muted">към № ${d.relatedInvoiceNumber}</span>`
               : docType === "invoice" ? `<button class="pill ${d.paid ? "paid" : "unpaid"}" ${offline ? "disabled" : ""} onclick="togglePaid('${d.id}')">${d.paid ? "Платена" : "Чака"}</button>`
               : "—"
@@ -1372,14 +1417,14 @@ function renderCash() {
       ${summary.entries.length === 0 && !cashEntryForm ? `<p class="muted">Няма добавени продажби на дребно за деня.</p>` : ""}
       ${summary.entries.length ? `
         <div class="table-scroll">
-        <table class="data">
+        <table class="data mobile-cards">
           <thead><tr><th>Сума</th><th>Начин на плащане</th><th>Бележка</th><th></th></tr></thead>
           <tbody>
             ${summary.entries.map(e => `
               <tr>
-                <td>${money(e.amount)}</td>
-                <td class="muted">${PAYMENT_METHODS[e.paymentMethod] || "В брой"}</td>
-                <td class="muted">${esc(e.note || "—")}</td>
+                <td data-label="Сума">${money(e.amount)}</td>
+                <td class="muted" data-label="Начин на плащане">${PAYMENT_METHODS[e.paymentMethod] || "В брой"}</td>
+                <td class="muted" data-label="Бележка">${esc(e.note || "—")}</td>
                 <td class="actions-cell"><button class="danger" ${offline ? "disabled" : ""} onclick="deleteCashEntry('${e.id}')">Изтрий</button></td>
               </tr>
             `).join("")}
@@ -1402,12 +1447,12 @@ function renderCash() {
     </div>
     <h3>История</h3>
     <div class="table-scroll">
-    <table class="data">
+    <table class="data mobile-cards">
       <thead><tr><th>Дата</th><th>Очаквано в брой</th><th>Преброено</th><th>Разлика</th></tr></thead>
       <tbody>
         ${history.length === 0 ? '<tr><td colspan="4" class="muted">Няма приключени дни още.</td></tr>' : history.map(c => {
           const s = computeCashSummary(c.date);
-          return `<tr><td>${c.date}</td><td>${money(s.byMethod.cash)}</td><td>${money(c.countedCash)}</td><td>${diffLabel(c.countedCash - s.byMethod.cash)}</td></tr>`;
+          return `<tr><td data-label="Дата">${c.date}</td><td data-label="Очаквано в брой">${money(s.byMethod.cash)}</td><td data-label="Преброено">${money(c.countedCash)}</td><td data-label="Разлика">${diffLabel(c.countedCash - s.byMethod.cash)}</td></tr>`;
         }).join("")}
       </tbody>
     </table>
