@@ -292,9 +292,11 @@ function cashEntryRowToObj(row) {
 let cfg = loadConfig();
 let supabaseClient = null;
 let session = null;
-let authScreen = "login"; // "login" | "signup"
+let authScreen = "login"; // "login" | "signup" | "reset"
 let authError = "";
+let authNotice = "";
 let authBusy = false;
+let recoveryMode = false; // arrived via a password-recovery email link
 let state = defaultState();
 let dataLoaded = false;
 let offline = false;
@@ -354,7 +356,16 @@ function applySharedConfigFromUrl() {
   }
 }
 
+// Must be read before createClient(), which consumes the auth fragment and
+// rewrites the URL, erasing the "type=recovery" marker we need to see.
+function isRecoveryUrl() {
+  return (location.hash || "").includes("type=recovery")
+    || new URLSearchParams(location.search).get("type") === "recovery";
+}
+
 async function boot() {
+  // Set before anything else can rewrite the URL and erase the marker.
+  if (isRecoveryUrl()) recoveryMode = true;
   applySharedConfigFromUrl();
   if (!cfg || !cfg.url || !cfg.anonKey) { render(); return; }
   if (typeof supabase === "undefined") {
@@ -365,12 +376,13 @@ async function boot() {
   supabaseClient = supabase.createClient(cfg.url, cfg.anonKey);
   const { data } = await supabaseClient.auth.getSession();
   session = data.session || null;
-  supabaseClient.auth.onAuthStateChange((_event, s) => {
+  supabaseClient.auth.onAuthStateChange((event, s) => {
+    if (event === "PASSWORD_RECOVERY") { recoveryMode = true; session = s; render(); return; }
     const wasLoggedIn = !!session;
     session = s;
     if (!!session !== wasLoggedIn) { dataLoaded = false; if (!session) teardownRealtime(); render(); if (session) loadAllData(); }
   });
-  if (session) { await loadAllData(); } else { render(); }
+  if (session && !recoveryMode) { await loadAllData(); } else { render(); }
 }
 
 async function loadAllData() {
@@ -489,21 +501,55 @@ function renderConnectionSetup() {
 // Auth screens
 // =========================================================================
 let authForm = { email: "", password: "" };
+let newPasswordForm = { password: "", confirm: "" };
 function updateAuthField(field, value) { authForm[field] = value; }
-function switchAuthScreen(s) { authScreen = s; authError = ""; render(); }
+function updateNewPasswordField(field, value) { newPasswordForm[field] = value; }
+function switchAuthScreen(s) { authScreen = s; authError = ""; authNotice = ""; render(); }
 async function doLogin() {
-  authBusy = true; authError = ""; render();
+  authBusy = true; authError = ""; authNotice = ""; render();
   const { error } = await supabaseClient.auth.signInWithPassword({ email: authForm.email.trim(), password: authForm.password });
   authBusy = false;
   if (error) { authError = error.message === "Invalid login credentials" ? "Грешен имейл или парола." : error.message; render(); }
 }
 async function doSignup() {
-  authBusy = true; authError = ""; render();
+  authBusy = true; authError = ""; authNotice = ""; render();
   const { error } = await supabaseClient.auth.signUp({ email: authForm.email.trim(), password: authForm.password });
   authBusy = false;
   if (error) { authError = error.message; render(); return; }
-  authError = "Профилът е създаден. Ако имейл потвърждението е включено в Supabase, проверете пощата си, после влезте.";
+  authNotice = "Профилът е създаден. Ако имейл потвърждението е включено в Supabase, проверете пощата си, после влезте.";
   authScreen = "login"; render();
+}
+// Sends a Supabase recovery email. The link in it brings the user back here
+// with a short-lived recovery session, which flips the app into recoveryMode
+// (see boot) so they can set a new password.
+async function doPasswordReset() {
+  const email = authForm.email.trim();
+  if (!email || !isValidEmail(email)) { authError = "Въведете валиден имейл адрес."; render(); return; }
+  authBusy = true; authError = ""; authNotice = ""; render();
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  authBusy = false;
+  if (error) { authError = error.message; render(); return; }
+  authNotice = `Изпратихме линк за нова парола на ${email}. Проверете пощата си, включително папка „Спам“.`;
+  authScreen = "login"; render();
+}
+async function doUpdatePassword() {
+  if (!newPasswordForm.password || newPasswordForm.password.length < 6) { authError = "Паролата трябва да е поне 6 знака."; render(); return; }
+  if (newPasswordForm.password !== newPasswordForm.confirm) { authError = "Двете пароли не съвпадат."; render(); return; }
+  authBusy = true; authError = ""; render();
+  const { error } = await supabaseClient.auth.updateUser({ password: newPasswordForm.password });
+  authBusy = false;
+  if (error) { authError = error.message; render(); return; }
+  newPasswordForm = { password: "", confirm: "" };
+  recoveryMode = false;
+  history.replaceState({}, "", location.pathname);
+  authNotice = "Паролата е сменена успешно. Влезте с новата парола.";
+  alert("Паролата е сменена успешно.");
+  if (session && !dataLoaded) { render(); await loadAllData(); } else { render(); }
+}
+function cancelRecovery() {
+  recoveryMode = false; authError = ""; newPasswordForm = { password: "", confirm: "" };
+  history.replaceState({}, "", location.pathname);
+  render();
 }
 async function doLogout() {
   await supabaseClient.auth.signOut();
@@ -515,18 +561,54 @@ function forgetConnection() { if (confirm("Забравяне на връзка�
 
 function renderAuth() {
   const isLogin = authScreen === "login";
+  const isReset = authScreen === "reset";
+  const messages = `
+    ${authNotice ? `<div class="info-box">${esc(authNotice)}</div>` : ""}
+    ${authError ? `<div class="error-box">${esc(authError)}</div>` : ""}
+  `;
+  if (isReset) {
+    return `
+      <div class="auth-wrap">
+        <div class="auth-card">
+          <h2>Забравена парола</h2>
+          <p class="muted" style="font-size:13px;">Въведете имейла на профила си и ще ви изпратим линк за задаване на нова парола.</p>
+          ${messages}
+          <div class="field-wrap"><label class="field">Имейл</label><input type="email" value="${esc(authForm.email)}" oninput="updateAuthField('email', this.value)"></div>
+          <button class="primary" style="width:100%;" ${authBusy ? "disabled" : ""} onclick="doPasswordReset()">${authBusy ? "Моля, изчакайте…" : "Изпрати линк"}</button>
+          <div class="auth-toggle"><a onclick="switchAuthScreen('login')">Назад към вход</a></div>
+        </div>
+      </div>
+    `;
+  }
   return `
     <div class="auth-wrap">
       <div class="auth-card">
         <h2>Свежо и Вкусно</h2>
-        ${authError ? `<div class="${authError.startsWith('Профилът') ? 'info-box' : 'error-box'}">${esc(authError)}</div>` : ""}
+        ${messages}
         <div class="field-wrap"><label class="field">Имейл</label><input type="email" value="${esc(authForm.email)}" oninput="updateAuthField('email', this.value)"></div>
         <div class="field-wrap"><label class="field">Парола</label><input type="password" value="${esc(authForm.password)}" oninput="updateAuthField('password', this.value)"></div>
         <button class="primary" style="width:100%;" ${authBusy ? "disabled" : ""} onclick="${isLogin ? "doLogin()" : "doSignup()"}">${authBusy ? "Моля, изчакайте…" : (isLogin ? "Вход" : "Създаване на профил")}</button>
+        ${isLogin ? `<div class="auth-toggle"><a onclick="switchAuthScreen('reset')">Забравена парола?</a></div>` : ""}
         <div class="auth-toggle">
           ${isLogin ? `Нямате профил? <a onclick="switchAuthScreen('signup')">Създайте нов</a>` : `Вече имате профил? <a onclick="switchAuthScreen('login')">Вход</a>`}
         </div>
         <div class="auth-toggle"><a onclick="forgetConnection()">Смяна на Supabase връзка</a></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderNewPassword() {
+  return `
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <h2>Нова парола</h2>
+        <p class="muted" style="font-size:13px;">Задайте нова парола за профила си. Минимум 6 знака.</p>
+        ${authError ? `<div class="error-box">${esc(authError)}</div>` : ""}
+        <div class="field-wrap"><label class="field">Нова парола</label><input type="password" value="${esc(newPasswordForm.password)}" oninput="updateNewPasswordField('password', this.value)"></div>
+        <div class="field-wrap"><label class="field">Повторете новата парола</label><input type="password" value="${esc(newPasswordForm.confirm)}" oninput="updateNewPasswordField('confirm', this.value)"></div>
+        <button class="primary" style="width:100%;" ${authBusy ? "disabled" : ""} onclick="doUpdatePassword()">${authBusy ? "Моля, изчакайте…" : "Запази новата парола"}</button>
+        <div class="auth-toggle"><a onclick="cancelRecovery()">Назад към вход</a></div>
       </div>
     </div>
   `;
@@ -551,6 +633,7 @@ function render() {
   const root = document.getElementById("root");
   if (!cfg) { root.innerHTML = renderConnectionSetup(); return; }
   if (!supabaseClient) { root.innerHTML = renderConnectionSetup(); return; }
+  if (recoveryMode) { root.innerHTML = renderNewPassword(); return; }
   if (!session) { root.innerHTML = renderAuth(); return; }
   if (!dataLoaded) { root.innerHTML = `<div class="auth-wrap"><div class="muted">Зареждане на данни…</div></div>`; return; }
 

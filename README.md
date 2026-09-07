@@ -53,6 +53,27 @@ This version fixes both by moving storage to a Supabase project:
    from before — or an old backup exported from `legacy-offline/index.html`,
    to migrate existing data in.
 
+### Password reset
+
+The login screen has a "Забравена парола?" link: enter the account email,
+Supabase emails a recovery link, and opening it brings you back to the app
+on a "Нова парола" screen to set a new one.
+
+Two things in the Supabase dashboard have to be right for this to work:
+
+1. **Authentication → URL Configuration** — the app's address must be listed
+   under *Site URL* or *Redirect URLs* (e.g.
+   `https://tiviv.github.io/ShopAssistant/`). Without it the recovery link
+   bounces to Supabase's default URL instead of the app, and the reset
+   appears to do nothing.
+2. **Email delivery** — Supabase's built-in email sender is rate-limited to
+   a handful of messages per hour and is meant for testing. For day-to-day
+   use, configure custom SMTP under *Authentication → Emails*.
+
+Locked out right now and can't wait for an email? An owner can also reset a
+password directly from **Authentication → Users** in the Supabase dashboard
+(the row's "…" menu offers a password-recovery / reset action).
+
 ### Sharing a ready-to-open link
 
 Anyone who opens the plain `index.html` URL has to paste in the Project URL
