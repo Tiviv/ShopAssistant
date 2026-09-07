@@ -138,6 +138,35 @@
   .modal-card { background: var(--surface); border-radius: 12px; padding: 1.5rem; max-width: 420px; width: 100%; max-height: 85vh; overflow: auto; }
   .detail-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
   .detail-row .label { color: var(--text-secondary); }
+
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .mobile-topbar { display: none; }
+  .sidebar-overlay { display: none; }
+
+  @media (max-width: 768px) {
+    .app { flex-direction: column; }
+    .mobile-topbar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 0.7rem 1rem; background: var(--surface); border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 40;
+    }
+    .mobile-topbar .brand { padding: 0; }
+    .hamburger-btn { font-size: 16px; line-height: 1; padding: 6px 10px; }
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 220px; z-index: 60;
+      transform: translateX(-100%); transition: transform 0.2s ease;
+      box-shadow: 2px 0 16px rgba(0, 0, 0, 0.2);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-overlay.open {
+      display: block; position: fixed; inset: 0; background: rgba(20, 18, 14, 0.4); z-index: 55;
+    }
+    main { padding: 1rem; }
+    .row { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .grid, .item-row { grid-template-columns: 1fr !important; }
+    .metrics-grid { grid-template-columns: 1fr !important; }
+    .actions-cell { flex-wrap: wrap; justify-content: flex-start; }
+  }
 </style>
 </head>
 <body>
@@ -215,7 +244,8 @@ function defaultState() {
     products: [],
     customers: [],
     documents: [],
-    cashClosings: []
+    cashClosings: [],
+    cashEntries: []
   };
 }
 
@@ -254,6 +284,9 @@ function docRowToObj(row) {
 function cashClosingRowToObj(row) {
   return { date: row.date, countedCash: Number(row.counted_cash), note: row.note || "", closedAt: row.closed_at };
 }
+function cashEntryRowToObj(row) {
+  return { id: row.id, date: row.date, amount: Number(row.amount), paymentMethod: row.payment_method || "cash", note: row.note || "", createdAt: row.created_at };
+}
 
 // ---------- global app state ----------
 let cfg = loadConfig();
@@ -268,6 +301,7 @@ let offline = false;
 let syncStatus = "idle"; // idle | syncing | online | offline | error
 let realtimeChannel = null;
 
+let sidebarOpen = false;
 let currentTab = "dashboard";
 let editingProduct = null;
 let editingCustomer = null;
@@ -281,6 +315,7 @@ let settingsSavedAt = null;
 let viewingCustomerId = null;
 let cashViewDate = todayStr();
 let cashForm = null;
+let cashEntryForm = null;
 let creditForm = null;
 let creditFormError = "";
 
@@ -300,7 +335,27 @@ function loadCachedState() {
 // =========================================================================
 // Bootstrapping
 // =========================================================================
+// A share link (?url=...&key=...) lets someone open the app and land
+// straight on login, instead of having to paste the Supabase connection
+// details in by hand. Only applied when this browser has no saved config
+// yet, so it never silently overrides an existing setup. The key here is
+// the public "anon"/"publishable" key, which is safe to pass around openly
+// (Row Level Security is the actual access control) — never the service_role key.
+function applySharedConfigFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const sharedUrl = params.get("url");
+  const sharedKey = params.get("key");
+  if (sharedUrl && sharedKey && !cfg) {
+    saveConfig({ url: sharedUrl.trim(), anonKey: sharedKey.trim() });
+    cfg = loadConfig();
+  }
+  if (params.has("url") || params.has("key")) {
+    history.replaceState({}, "", location.pathname);
+  }
+}
+
 async function boot() {
+  applySharedConfigFromUrl();
   if (!cfg || !cfg.url || !cfg.anonKey) { render(); return; }
   if (typeof supabase === "undefined") {
     authError = "Не успяхме да заредим Supabase библиотеката (проверете интернет връзката и презаредете страницата).";
@@ -322,14 +377,15 @@ async function loadAllData() {
   syncStatus = "syncing"; render();
   try {
     const uidUser = session.user.id;
-    const [settingsRes, productsRes, customersRes, docsRes, cashRes] = await Promise.all([
+    const [settingsRes, productsRes, customersRes, docsRes, cashRes, entriesRes] = await Promise.all([
       supabaseClient.from("settings").select("*").eq("owner_id", uidUser).maybeSingle(),
       supabaseClient.from("products").select("*").eq("owner_id", uidUser).order("name"),
       supabaseClient.from("customers").select("*").eq("owner_id", uidUser).order("name"),
       supabaseClient.from("documents").select("*").eq("owner_id", uidUser).order("created_at"),
-      supabaseClient.from("cash_closings").select("*").eq("owner_id", uidUser).order("date")
+      supabaseClient.from("cash_closings").select("*").eq("owner_id", uidUser).order("date"),
+      supabaseClient.from("cash_entries").select("*").eq("owner_id", uidUser).order("created_at")
     ]);
-    if (settingsRes.error || productsRes.error || customersRes.error || docsRes.error || cashRes.error) throw (settingsRes.error || productsRes.error || customersRes.error || docsRes.error || cashRes.error);
+    if (settingsRes.error || productsRes.error || customersRes.error || docsRes.error || cashRes.error || entriesRes.error) throw (settingsRes.error || productsRes.error || customersRes.error || docsRes.error || cashRes.error || entriesRes.error);
 
     let settingsRow = settingsRes.data;
     if (!settingsRow) {
@@ -343,7 +399,8 @@ async function loadAllData() {
       products: productsRes.data,
       customers: customersRes.data.map(customerRowToObj),
       documents: docsRes.data.map(docRowToObj),
-      cashClosings: cashRes.data.map(cashClosingRowToObj)
+      cashClosings: cashRes.data.map(cashClosingRowToObj),
+      cashEntries: entriesRes.data.map(cashEntryRowToObj)
     };
     dataLoaded = true; offline = false; syncStatus = "online";
     cacheState();
@@ -366,6 +423,7 @@ function setupRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "documents", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("documents"))
     .on("postgres_changes", { event: "*", schema: "public", table: "settings", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("settings"))
     .on("postgres_changes", { event: "*", schema: "public", table: "cash_closings", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("cash_closings"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "cash_entries", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("cash_entries"))
     .subscribe();
 }
 function teardownRealtime() { if (realtimeChannel) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; } }
@@ -388,6 +446,9 @@ async function refetchTable(table) {
   } else if (table === "cash_closings") {
     const { data, error } = await supabaseClient.from("cash_closings").select("*").eq("owner_id", uidUser).order("date");
     if (!error) { state.cashClosings = data.map(cashClosingRowToObj); cacheState(); render(); }
+  } else if (table === "cash_entries") {
+    const { data, error } = await supabaseClient.from("cash_entries").select("*").eq("owner_id", uidUser).order("created_at");
+    if (!error) { state.cashEntries = data.map(cashEntryRowToObj); cacheState(); render(); }
   }
 }
 
@@ -479,10 +540,12 @@ function setTab(tab) {
   editingProduct = null; editingCustomer = null; docForm = null; printingDocId = null;
   productErrors = {}; customerErrors = {}; settingsErrors = {};
   settingsForm = null; settingsEditing = false; settingsSavedAt = null;
-  viewingCustomerId = null; cashForm = null;
+  viewingCustomerId = null; cashForm = null; cashEntryForm = null;
   creditForm = null; creditFormError = "";
+  sidebarOpen = false;
   render();
 }
+function toggleSidebar() { sidebarOpen = !sidebarOpen; render(); }
 
 function render() {
   const root = document.getElementById("root");
@@ -493,7 +556,12 @@ function render() {
 
   root.innerHTML = `
     <div class="app">
-      <nav class="sidebar no-print" id="sidebar"></nav>
+      <div class="mobile-topbar no-print">
+        <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Меню">☰</button>
+        <div class="brand">Свежо и Вкусно</div>
+      </div>
+      <div class="sidebar-overlay no-print ${sidebarOpen ? "open" : ""}" onclick="toggleSidebar()"></div>
+      <nav class="sidebar no-print ${sidebarOpen ? "open" : ""}" id="sidebar"></nav>
       <main id="content"></main>
     </div>
   `;
@@ -548,9 +616,11 @@ function renderDashboard() {
     </div>
     <h3>Последни документи</h3>
     ${recent.length === 0 ? '<p class="muted">Все още няма създадени документи.</p>' : `
+      <div class="table-scroll">
       <table class="data"><tbody>
         ${recent.map(d => `<tr><td>${d.docType === "invoice" ? "Фактура" : d.docType === "offer" ? "Оферта" : "Кредитно"} № ${d.number} — ${esc(d.customerName || "—")}</td><td style="text-align:right">${money(d.total)}</td></tr>`).join("")}
       </tbody></table>
+      </div>
     `}
   `;
 }
@@ -598,6 +668,7 @@ function renderProducts() {
   return `
     <div class="row"><h2>Продукти</h2><button class="primary" ${offline ? "disabled" : ""} onclick="newProduct()">+ Нов продукт</button></div>
     ${editForm}
+    <div class="table-scroll">
     <table class="data">
       <thead><tr><th>Име</th><th>Категория</th><th>Мярка</th><th>Цена</th><th>Наличност</th><th></th></tr></thead>
       <tbody>
@@ -613,6 +684,7 @@ function renderProducts() {
         `).join("")}
       </tbody>
     </table>
+    </div>
   `;
 }
 
@@ -685,6 +757,7 @@ function renderCustomers() {
   return `
     <div class="row"><h2>Клиенти</h2><button class="primary" ${offline ? "disabled" : ""} onclick="newCustomer()">+ Нов клиент</button></div>
     ${editForm}
+    <div class="table-scroll">
     <table class="data">
       <tbody>
         ${state.customers.length === 0 ? '<tr><td class="muted">Няма добавени клиенти.</td></tr>' : state.customers.map(c => `
@@ -699,6 +772,7 @@ function renderCustomers() {
         `).join("")}
       </tbody>
     </table>
+    </div>
     ${viewingCustomer ? renderCustomerDetailsModal(viewingCustomer) : ""}
   `;
 }
@@ -923,6 +997,7 @@ function renderDocuments(docType, title) {
     </div>
     ${formHtml}
     ${creditFormHtml}
+    <div class="table-scroll">
     <table class="data">
       <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Общо</th>${docType === "invoice" ? "<th>Плащане</th>" : ""}<th>Статус</th><th></th></tr></thead>
       <tbody>
@@ -950,6 +1025,7 @@ function renderDocuments(docType, title) {
         `; }).join("")}
       </tbody>
     </table>
+    </div>
   `;
 }
 
@@ -1096,14 +1172,40 @@ function renderPrintable(doc) {
 }
 
 // ---------- CASH REGISTER (daily close) ----------
+// Expected totals combine three sources for the viewed day: invoices (add),
+// credit notes against them (already negative, so they subtract), and
+// manual entries for walk-in/retail sales that never got an invoice.
 function computeCashSummary(date) {
-  const invoices = state.documents.filter(d => d.docType === "invoice" && d.date === date);
+  const docs = state.documents.filter(d => (d.docType === "invoice" || d.docType === "credit") && d.date === date);
+  const entries = state.cashEntries.filter(e => e.date === date);
   const byMethod = { cash: 0, card: 0, bank: 0 };
-  invoices.forEach(d => { const m = d.paymentMethod || "cash"; byMethod[m] = (byMethod[m] || 0) + d.total; });
-  const total = invoices.reduce((s, d) => s + d.total, 0);
-  return { byMethod, total, count: invoices.length };
+  docs.forEach(d => { const m = d.paymentMethod || "cash"; byMethod[m] = (byMethod[m] || 0) + d.total; });
+  entries.forEach(e => { const m = e.paymentMethod || "cash"; byMethod[m] = (byMethod[m] || 0) + Number(e.amount); });
+  const docsTotal = docs.reduce((s, d) => s + d.total, 0);
+  const entriesTotal = entries.reduce((s, e) => s + Number(e.amount), 0);
+  const invoiceCount = docs.filter(d => d.docType === "invoice").length;
+  return { byMethod, total: docsTotal + entriesTotal, invoiceCount, entries };
 }
-function updateCashViewDate(v) { cashViewDate = v; cashForm = null; render(); }
+function updateCashViewDate(v) { cashViewDate = v; cashForm = null; cashEntryForm = null; render(); }
+function beginCashEntry() { cashEntryForm = { amount: "", paymentMethod: "cash", note: "" }; render(); }
+function updateCashEntryField(field, value) { cashEntryForm[field] = value; }
+function cancelCashEntry() { cashEntryForm = null; render(); }
+async function saveCashEntry() {
+  if (!isValidMoney(cashEntryForm.amount) || Number(cashEntryForm.amount) <= 0) { alert("Въведете валидна сума (число > 0)."); return; }
+  const row = { owner_id: session.user.id, date: cashViewDate, amount: Number(cashEntryForm.amount), payment_method: cashEntryForm.paymentMethod, note: cashEntryForm.note || "" };
+  const res = await supabaseClient.from("cash_entries").insert(row).select().single();
+  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  state.cashEntries.push(cashEntryRowToObj(res.data));
+  cashEntryForm = null;
+  cacheState(); flashSaved(true); render();
+}
+async function deleteCashEntry(id) {
+  if (!confirm("Изтриване на това постъпление?")) return;
+  const res = await supabaseClient.from("cash_entries").delete().eq("id", id);
+  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  state.cashEntries = state.cashEntries.filter(e => e.id !== id);
+  cacheState(); flashSaved(true); render();
+}
 function beginCashEdit() {
   const existing = state.cashClosings.find(c => c.date === cashViewDate);
   cashForm = existing ? { countedCash: existing.countedCash, note: existing.note } : { countedCash: "", note: "" };
@@ -1141,7 +1243,7 @@ function renderCash() {
         <div class="metric"><div class="label">Очаквано в брой</div><div class="value">${money(summary.byMethod.cash)}</div></div>
         <div class="metric"><div class="label">Очаквано с карта</div><div class="value">${money(summary.byMethod.card)}</div></div>
         <div class="metric"><div class="label">Очаквано с банков превод</div><div class="value">${money(summary.byMethod.bank)}</div></div>
-        <div class="metric"><div class="label">Общо фактурирано (${summary.count})</div><div class="value">${money(summary.total)}</div></div>
+        <div class="metric"><div class="label">Нетно за деня (${summary.invoiceCount} фактури, ${summary.entries.length} продажби на дребно)</div><div class="value">${money(summary.total)}</div></div>
       </div>
       ${editing ? `
         <div class="field-wrap"><label class="field">Преброена сума в брой (€)</label><input type="number" step="0.01" value="${esc(cashForm.countedCash)}" oninput="updateCashField('countedCash', this.value)"></div>
@@ -1156,7 +1258,44 @@ function renderCash() {
         <button class="primary" ${offline ? "disabled" : ""} onclick="beginCashEdit()">${existing ? "Редакция на приключването" : "Приключи деня"}</button>
       `}
     </div>
+    <div class="card">
+      <div class="row" style="margin-bottom: ${summary.entries.length || cashEntryForm ? "0.8rem" : "0"};">
+        <h3 style="margin:0;">Продажби на дребно (без фактура)</h3>
+        ${!cashEntryForm ? `<button class="primary" ${offline ? "disabled" : ""} onclick="beginCashEntry()">+ Добави постъпление</button>` : ""}
+      </div>
+      ${summary.entries.length === 0 && !cashEntryForm ? `<p class="muted">Няма добавени продажби на дребно за деня.</p>` : ""}
+      ${summary.entries.length ? `
+        <div class="table-scroll">
+        <table class="data">
+          <thead><tr><th>Сума</th><th>Начин на плащане</th><th>Бележка</th><th></th></tr></thead>
+          <tbody>
+            ${summary.entries.map(e => `
+              <tr>
+                <td>${money(e.amount)}</td>
+                <td class="muted">${PAYMENT_METHODS[e.paymentMethod] || "В брой"}</td>
+                <td class="muted">${esc(e.note || "—")}</td>
+                <td class="actions-cell"><button class="danger" ${offline ? "disabled" : ""} onclick="deleteCashEntry('${e.id}')">Изтрий</button></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+        </div>
+      ` : ""}
+      ${cashEntryForm ? `
+        <div class="grid" style="grid-template-columns: 1fr 1fr 2fr; margin-top: 10px;">
+          <div class="field-wrap"><label class="field">Сума (€)</label><input type="number" step="0.01" value="${esc(cashEntryForm.amount)}" oninput="updateCashEntryField('amount', this.value)"></div>
+          <div class="field-wrap"><label class="field">Начин на плащане</label>
+            <select onchange="updateCashEntryField('paymentMethod', this.value)">
+              ${Object.entries(PAYMENT_METHODS).map(([k, label]) => `<option value="${k}" ${cashEntryForm.paymentMethod === k ? "selected" : ""}>${label}</option>`).join("")}
+            </select>
+          </div>
+          <div class="field-wrap"><label class="field">Бележка (по избор)</label><input value="${esc(cashEntryForm.note)}" oninput="updateCashEntryField('note', this.value)" placeholder="напр. клиент на място"></div>
+        </div>
+        <div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveCashEntry()">Запази постъпление</button><button onclick="cancelCashEntry()">Отказ</button></div>
+      ` : ""}
+    </div>
     <h3>История</h3>
+    <div class="table-scroll">
     <table class="data">
       <thead><tr><th>Дата</th><th>Очаквано в брой</th><th>Преброено</th><th>Разлика</th></tr></thead>
       <tbody>
@@ -1166,6 +1305,7 @@ function renderCash() {
         }).join("")}
       </tbody>
     </table>
+    </div>
   `;
 }
 
@@ -1181,13 +1321,17 @@ function renderReports() {
   return `
     <h2>Справки</h2>
     <h3>Оборот по месеци</h3>
+    <div class="table-scroll">
     <table class="data"><tbody>
       ${monthlyList.length === 0 ? '<tr><td class="muted">Няма данни още.</td></tr>' : monthlyList.map(([m, total]) => `<tr><td>${m}</td><td style="text-align:right">${money(total)}</td></tr>`).join("")}
     </tbody></table>
+    </div>
     <h3>Топ продукти по приход</h3>
+    <div class="table-scroll">
     <table class="data"><tbody>
       ${topProducts.length === 0 ? '<tr><td class="muted">Няма данни още.</td></tr>' : topProducts.map(([name, total]) => `<tr><td>${esc(name)}</td><td style="text-align:right">${money(total)}</td></tr>`).join("")}
     </tbody></table>
+    </div>
   `;
 }
 

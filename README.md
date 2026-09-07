@@ -53,6 +53,24 @@ This version fixes both by moving storage to a Supabase project:
    from before — or an old backup exported from `legacy-offline/index.html`,
    to migrate existing data in.
 
+### Sharing a ready-to-open link
+
+Anyone who opens the plain `index.html` URL has to paste in the Project URL
+and anon key by hand before they even reach login — fine for you, but
+friction for someone you just want to try the app out. Instead, share:
+
+```
+https://tiviv.github.io/ShopAssistant/?url=<Project URL>&key=<anon key>
+```
+
+Opening that link auto-fills the connection and drops the visitor straight
+on the login/signup screen — it only kicks in on a browser with no saved
+connection yet, so it never overwrites your own setup. If they sign up
+fresh, they get their own empty, isolated dataset (Row Level Security keeps
+it separate from yours); share your actual login instead if you want them
+to see your data. The anon key is meant to be shared this way — it's the
+public key, safe outside the browser, not the secret `service_role` key.
+
 ### Updating an existing project's schema
 
 `supabase/schema.sql` is safe to re-run in full any time it changes — every

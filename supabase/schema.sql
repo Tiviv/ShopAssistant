@@ -91,9 +91,30 @@ create table if not exists public.cash_closings (
   primary key (owner_id, date)
 );
 
+-- Walk-in / cash-register sales that never go through the invoice flow
+-- (e.g. a private individual buying in person). Each row is one manual
+-- till entry for a day, counted toward that day's expected cash/card/bank
+-- totals on the Каса tab alongside invoices.
+create table if not exists public.cash_entries (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  date date not null,
+  amount numeric(12,2) not null default 0,
+  payment_method text not null default 'cash',
+  note text not null default '',
+  created_at timestamptz not null default now()
+);
+
+do $$
+begin
+  alter table public.cash_entries add constraint cash_entries_payment_method_check check (payment_method in ('cash', 'card', 'bank'));
+exception when duplicate_object then null;
+end $$;
+
 create index if not exists documents_owner_doctype_idx on public.documents (owner_id, doc_type);
 create index if not exists products_owner_idx on public.products (owner_id);
 create index if not exists customers_owner_idx on public.customers (owner_id);
+create index if not exists cash_entries_owner_date_idx on public.cash_entries (owner_id, date);
 
 -- ---------------------------------------------------------------------
 -- 2. Row Level Security — each user only ever sees their own data
@@ -103,6 +124,7 @@ alter table public.products enable row level security;
 alter table public.customers enable row level security;
 alter table public.documents enable row level security;
 alter table public.cash_closings enable row level security;
+alter table public.cash_entries enable row level security;
 
 drop policy if exists "own settings" on public.settings;
 create policy "own settings" on public.settings
@@ -122,6 +144,10 @@ create policy "own documents" on public.documents
 
 drop policy if exists "own cash closings" on public.cash_closings;
 create policy "own cash closings" on public.cash_closings
+  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+drop policy if exists "own cash entries" on public.cash_entries;
+create policy "own cash entries" on public.cash_entries
   for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
 -- ---------------------------------------------------------------------
@@ -239,5 +265,11 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.cash_closings;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.cash_entries;
 exception when duplicate_object then null;
 end $$;
