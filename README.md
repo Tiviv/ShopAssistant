@@ -71,9 +71,18 @@ the database as written, and are only shown with an English label where one
 exists; and anything you typed yourself — company name, addresses, customer
 names, notes — is shown exactly as entered.
 
-Printed invoices follow the interface language, so switching to English
-prints an English invoice. For documents you hand to Bulgarian customers or
-your accountant, print them with БГ selected.
+Printed documents follow their own rule, not the interface toggle:
+
+- **Invoices and credit notes always print in Bulgarian**, whatever language
+  the app is in. They are accounting documents that go to Bulgarian customers
+  and to your accountant, so their language shouldn't depend on who happened
+  to be looking at the screen. When the interface is in English, the print
+  view says so above the sheet.
+- **Quotes/offers are your choice.** The print view has its own БГ / EN
+  toggle, so you can send an English quote to a foreign buyer and a Bulgarian
+  one to everybody else. It starts on the interface language and resets each
+  time you open a quote — it never changes the saved document, only how this
+  printout reads.
 
 ### Password reset
 

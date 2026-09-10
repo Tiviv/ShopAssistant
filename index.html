@@ -354,6 +354,8 @@ const TRANSLATIONS = {
 
     printInvoice: "ФАКТУРА", printOffer: "ОФЕРТА", printCredit: "КРЕДИТНО ИЗВЕСТИЕ",
     printPdf: "Печат / PDF", supplier: "Доставчик", recipient: "Получател",
+    printLanguage: "Език на офертата:",
+    alwaysBgNote: "Фактурите и кредитните известия се печатат винаги на български, независимо от езика на приложението.",
     towardsInvoiceNo: "към фактура № {n}", dateColon: "Дата: {d}",
     goodsService: "Стока / услуга", unitPrice: "Ед. цена", sum: "Сума",
     paymentMethodColon: "Начин на плащане: {m}", totalToPay: "Общо за плащане",
@@ -489,6 +491,8 @@ const TRANSLATIONS = {
 
     printInvoice: "INVOICE", printOffer: "QUOTE", printCredit: "CREDIT NOTE",
     printPdf: "Print / PDF", supplier: "Supplier", recipient: "Recipient",
+    printLanguage: "Quote language:",
+    alwaysBgNote: "Invoices and credit notes always print in Bulgarian, whatever language the app is in.",
     towardsInvoiceNo: "for invoice No. {n}", dateColon: "Date: {d}",
     goodsService: "Goods / service", unitPrice: "Unit price", sum: "Amount",
     paymentMethodColon: "Payment method: {m}", totalToPay: "Total due",
@@ -535,14 +539,19 @@ let lang = (function () {
   return "bg";
 })();
 
-function t(key, params) {
-  let s = (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || (TRANSLATIONS.bg[key] != null ? TRANSLATIONS.bg[key] : key);
+// The "In" variants take an explicit language, because printed documents don't
+// always follow the interface language — see printLangFor().
+function tIn(l, key, params) {
+  let s = (TRANSLATIONS[l] && TRANSLATIONS[l][key]) || (TRANSLATIONS.bg[key] != null ? TRANSLATIONS.bg[key] : key);
   if (params) for (const k in params) s = s.split("{" + k + "}").join(params[k]);
   return s;
 }
-function unitLabel(u) { const k = "unit_" + u; return (TRANSLATIONS[lang] && TRANSLATIONS[lang][k]) || u; }
+function t(key, params) { return tIn(lang, key, params); }
+function unitLabelIn(l, u) { const k = "unit_" + u; return (TRANSLATIONS[l] && TRANSLATIONS[l][k]) || u; }
+function unitLabel(u) { return unitLabelIn(lang, u); }
 function categoryLabel(c) { const k = "cat_" + c; return (TRANSLATIONS[lang] && TRANSLATIONS[lang][k]) || c; }
-function paymentLabel(m) { return t("pay_" + (m || "cash")); }
+function paymentLabelIn(l, m) { return tIn(l, "pay_" + (m || "cash")); }
+function paymentLabel(m) { return paymentLabelIn(lang, m); }
 function setLang(next) {
   lang = next;
   try { localStorage.setItem(LANG_KEY, next); } catch (e) {}
@@ -552,10 +561,11 @@ function setLang(next) {
 }
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
-function money(n) {
+function moneyIn(l, n) {
   const v = Number(n) || 0;
-  return v.toLocaleString(lang === "en" ? "en-IE" : "bg-BG", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return v.toLocaleString(l === "en" ? "en-IE" : "bg-BG", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+function money(n) { return moneyIn(lang, n); }
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
@@ -668,6 +678,7 @@ let editingProduct = null;
 let editingCustomer = null;
 let docForm = null;
 let printingDocId = null;
+let printLang = null; // per-print language override for offers; null = follow interface
 let productErrors = {};
 let customerErrors = {};
 let settingsErrors = {};
@@ -1517,8 +1528,17 @@ async function togglePaid(id) {
   d.paid = res.data.paid;
   cacheState(); flashSaved(true); render();
 }
-function viewDoc(id) { printingDocId = id; render(); }
-function backFromPrint() { printingDocId = null; render(); }
+// Invoices and credit notes are accounting documents that go to Bulgarian
+// customers and to the accountant, so they always print in Bulgarian no matter
+// which language the interface is in. Offers/quotes are commercial documents
+// that may go to a foreign buyer, so those follow a per-print choice.
+function printLangFor(doc) {
+  if (!doc || doc.docType !== "offer") return "bg";
+  return printLang || lang;
+}
+function setPrintLang(l) { printLang = l; render(); }
+function viewDoc(id) { printingDocId = id; printLang = null; render(); }
+function backFromPrint() { printingDocId = null; printLang = null; render(); }
 
 function exportDocsCSV(docType) {
   const list = state.documents.filter(d => d.docType === docType);
@@ -1672,63 +1692,77 @@ function renderCreditForm() {
 }
 
 function renderPrintable(doc) {
-  const typeLabel = doc.docType === "invoice" ? t("printInvoice") : doc.docType === "offer" ? t("printOffer") : t("printCredit");
+  // Everything inside .print-sheet renders in the document's own language
+  // (see printLangFor); the toolbar above it stays in the interface language.
+  const dl = printLangFor(doc);
+  const T = (k, params) => tIn(dl, k, params);
+  const m = v => moneyIn(dl, v);
+  const typeLabel = doc.docType === "invoice" ? T("printInvoice") : doc.docType === "offer" ? T("printOffer") : T("printCredit");
   const cust = doc.customerSnapshot;
   const s = state.settings;
   return `
-    <div class="no-print" style="display:flex; gap:8px; margin-bottom:1rem;">
-      <button onclick="backFromPrint()">${t("back")}</button>
-      <button class="primary" onclick="window.print()">${t("printPdf")}</button>
+    <div class="no-print" style="margin-bottom:1rem;">
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <button onclick="backFromPrint()">${t("back")}</button>
+        <button class="primary" onclick="window.print()">${t("printPdf")}</button>
+        ${doc.docType === "offer" ? `
+          <span class="muted" style="font-size:12px; margin-left:4px;">${t("printLanguage")}</span>
+          <div class="lang-toggle print-lang-toggle" role="group" aria-label="${t("printLanguage")}">
+            <button class="${dl === "bg" ? "active" : ""}" onclick="setPrintLang('bg')">БГ</button>
+            <button class="${dl === "en" ? "active" : ""}" onclick="setPrintLang('en')">EN</button>
+          </div>` : ""}
+      </div>
+      ${doc.docType !== "offer" && lang === "en" ? `<p class="muted" style="font-size:12px; margin:8px 0 0;">${t("alwaysBgNote")}</p>` : ""}
     </div>
-    <div class="print-sheet">
+    <div class="print-sheet" lang="${dl}">
       <div style="display:flex; justify-content:space-between; margin-bottom:1.5rem;">
         <div>
           <div style="font-size:20px; font-weight:600;">${typeLabel}</div>
-          <div style="font-size:14px;">${t("numberShort")} ${String(doc.number).padStart(6, "0")}</div>
-          ${doc.relatedInvoiceNumber ? `<div style="font-size:13px;">${t("towardsInvoiceNo", { n: String(doc.relatedInvoiceNumber).padStart(6, "0") })}</div>` : ""}
+          <div style="font-size:14px;">${T("numberShort")} ${String(doc.number).padStart(6, "0")}</div>
+          ${doc.relatedInvoiceNumber ? `<div style="font-size:13px;">${T("towardsInvoiceNo", { n: String(doc.relatedInvoiceNumber).padStart(6, "0") })}</div>` : ""}
         </div>
-        <div style="font-size:13px;">${t("dateColon", { d: doc.date })}</div>
+        <div style="font-size:13px;">${T("dateColon", { d: doc.date })}</div>
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1.5rem; font-size:13px;">
         <div>
-          <div style="font-weight:600; margin-bottom:4px;">${t("supplier")}</div>
+          <div style="font-weight:600; margin-bottom:4px;">${T("supplier")}</div>
           <div>${esc(s.companyName) || "—"}</div>
-          <div>${t("eik")}: ${esc(s.eik) || "—"}</div>
-          ${s.vatNumber ? `<div>${t("vatNumber")}: ${esc(s.vatNumber)}</div>` : ""}
+          <div>${T("eik")}: ${esc(s.eik) || "—"}</div>
+          ${s.vatNumber ? `<div>${T("vatNumber")}: ${esc(s.vatNumber)}</div>` : ""}
           <div>${esc(s.address) || "—"}</div>
-          ${s.mol ? `<div>${t("mol")}: ${esc(s.mol)}</div>` : ""}
+          ${s.mol ? `<div>${T("mol")}: ${esc(s.mol)}</div>` : ""}
         </div>
         <div>
-          <div style="font-weight:600; margin-bottom:4px;">${t("recipient")}</div>
+          <div style="font-weight:600; margin-bottom:4px;">${T("recipient")}</div>
           <div>${esc(doc.customerName) || "—"}</div>
-          ${cust && cust.eik ? `<div>${t("eik")}: ${esc(cust.eik)}</div>` : ""}
-          ${cust && cust.vatNumber ? `<div>${t("vatNumber")}: ${esc(cust.vatNumber)}</div>` : ""}
+          ${cust && cust.eik ? `<div>${T("eik")}: ${esc(cust.eik)}</div>` : ""}
+          ${cust && cust.vatNumber ? `<div>${T("vatNumber")}: ${esc(cust.vatNumber)}</div>` : ""}
           ${cust && cust.address ? `<div>${esc(cust.address)}</div>` : ""}
         </div>
       </div>
       <table>
-        <thead><tr><th>${t("goodsService")}</th><th>${t("unit")}</th><th>${t("qty")}</th><th>${t("unitPrice")}</th><th>${t("sum")}</th></tr></thead>
+        <thead><tr><th>${T("goodsService")}</th><th>${T("unit")}</th><th>${T("qty")}</th><th>${T("unitPrice")}</th><th>${T("sum")}</th></tr></thead>
         <tbody>
           ${doc.items.filter(it => it.name).map(it => `
             <tr>
               <td>${esc(it.name)}</td>
-              <td>${esc(unitLabel(it.unit))}</td>
+              <td>${esc(unitLabelIn(dl, it.unit))}</td>
               <td>${it.qty}</td>
-              <td>${money(it.price)}</td>
-              <td>${money((Number(it.qty) || 0) * (Number(it.price) || 0))}</td>
+              <td>${m(it.price)}</td>
+              <td>${m((Number(it.qty) || 0) * (Number(it.price) || 0))}</td>
             </tr>
           `).join("")}
         </tbody>
       </table>
       <div style="text-align:right; font-size:13px; margin: 1rem 0 2rem;">
-        ${doc.docType === "invoice" ? `<div>${t("paymentMethodColon", { m: paymentLabel(doc.paymentMethod) })}</div>` : ""}
-        <div>${t("taxBase")}: ${money(doc.subtotal)}</div>
-        <div>${t("vatLabel")} (${doc.vatRate}%): ${money(doc.vatAmount)}</div>
-        <div style="font-weight:600; font-size:15px;">${t("totalToPay")}: ${money(doc.total)}</div>
+        ${doc.docType === "invoice" ? `<div>${T("paymentMethodColon", { m: paymentLabelIn(dl, doc.paymentMethod) })}</div>` : ""}
+        <div>${T("taxBase")}: ${m(doc.subtotal)}</div>
+        <div>${T("vatLabel")} (${doc.vatRate}%): ${m(doc.vatAmount)}</div>
+        <div style="font-weight:600; font-size:15px;">${T("totalToPay")}: ${m(doc.total)}</div>
       </div>
       <div style="display:flex; justify-content:space-between; font-size:12px; color:#555; margin-top:3rem;">
-        <div>${t("preparedBy")}: _______________</div>
-        <div>${t("receivedBy")}: _______________</div>
+        <div>${T("preparedBy")}: _______________</div>
+        <div>${T("receivedBy")}: _______________</div>
       </div>
     </div>
   `;
