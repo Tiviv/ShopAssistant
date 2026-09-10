@@ -1,4 +1,4 @@
-# Свежо и Вкусно — управление
+# ShopAssistant / Магазинер
 
 A small offline-style invoicing/inventory app for a produce/grocery wholesale
 business, now backed by [Supabase](https://supabase.com) (free tier) instead
@@ -27,6 +27,9 @@ This version fixes both by moving storage to a Supabase project:
 - **Stock now actually moves.** The old app never decremented `Наличност`
   when an invoice was issued. This version calls `adjust_stock` for every
   line item on save (decrements on invoices, restores on credit notes).
+- **Two languages** — the whole interface is available in Bulgarian
+  (*Магазинер*) and English (*ShopAssistant*), switchable at any time with
+  the БГ / EN toggle; see [Language](#language) below.
 - A basic **offline fallback**: the last successfully synced copy of your
   data is mirrored into `localStorage`. If the app can't reach Supabase, it
   shows that cached copy in read-only mode instead of a blank screen — but
@@ -48,14 +51,33 @@ This version fixes both by moving storage to a Supabase project:
    and remembers them in that browser going forward.
 5. Create an account (email + password) on the first screen. The first
    login automatically gets an empty `settings` row via a database trigger.
-6. Optional: on the **Данни / Резервно копие** tab, use "Качи файл (JSON)"
+6. Optional: on the **Данни / Резервно копие** / **Data / Backup** tab, use
+   "Качи файл (JSON)" / "Upload file (JSON)"
    to upload `supabase/seed-data.json` — the same 52-product starter catalog
    from before — or an old backup exported from `legacy-offline/index.html`,
    to migrate existing data in.
 
+### Language
+
+Every screen is translated. The toggle sits in the top-right of the
+login/setup cards before you sign in, and at the bottom of the sidebar (or
+the slide-out menu on a phone) afterwards. The choice is remembered per
+browser, so each person can use the app in whichever language they prefer
+on their own device.
+
+Two things stay Bulgarian on purpose, because they are *data*, not
+interface: product categories and units (`кг`, `Плодове`, …) are stored in
+the database as written, and are only shown with an English label where one
+exists; and anything you typed yourself — company name, addresses, customer
+names, notes — is shown exactly as entered.
+
+Printed invoices follow the interface language, so switching to English
+prints an English invoice. For documents you hand to Bulgarian customers or
+your accountant, print them with БГ selected.
+
 ### Password reset
 
-The login screen has a "Забравена парола?" link: enter the account email,
+The login screen has a "Забравена парола?" / "Forgot password?" link: enter the account email,
 Supabase emails a recovery link, and opening it brings you back to the app
 on a "Нова парола" screen to set a new one.
 

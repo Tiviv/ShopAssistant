@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Свежо и Вкусно — управление</title>
+<title>ShopAssistant / Магазинер</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
   :root {
@@ -129,6 +129,21 @@
   .auth-toggle { text-align: center; margin-top: 12px; font-size: 13px; }
   .auth-toggle a { color: var(--accent); cursor: pointer; text-decoration: underline; }
   .sidebar-footer { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
+  .lang-toggle { display: flex; gap: 4px; margin-bottom: 8px; }
+  .lang-toggle button {
+    flex: 0 0 auto;
+    padding: 3px 9px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .lang-toggle button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .auth-card .lang-toggle { justify-content: flex-end; margin-bottom: 12px; }
 
   .field-error { color: var(--danger); font-size: 11px; margin-top: 3px; }
   .field-wrap.has-error input, .field-wrap.has-error select { border-color: var(--danger); }
@@ -233,16 +248,313 @@
        backup file to migrate its products/customers/documents in here
    ========================================================================= */
 
+// Units and categories are stored in the database as these exact Bulgarian
+// strings, so they stay canonical — only their *display* is translated.
 const UNITS = ["кг", "бр", "оп", "л", "г"];
 const CATEGORIES = ["Плодове", "Зеленчуци", "Напитки", "Подправки", "Ориз и зърнени", "Сладки", "Други"];
 const VAT_RATES = [20, 9, 0];
 const CONFIG_KEY = "shopERP_supabase_config";
 const CACHE_KEY = "shopERP_offline_cache_v1";
+const LANG_KEY = "shopERP_lang";
+
+const TRANSLATIONS = {
+  bg: {
+    appName: "Магазинер",
+    unit_кг: "кг", unit_бр: "бр", unit_оп: "оп", unit_л: "л", unit_г: "г",
+    cat_Плодове: "Плодове", "cat_Зеленчуци": "Зеленчуци", cat_Напитки: "Напитки", cat_Подправки: "Подправки",
+    "cat_Ориз и зърнени": "Ориз и зърнени", cat_Сладки: "Сладки", cat_Други: "Други",
+    pay_cash: "В брой", pay_card: "С карта", pay_bank: "Банков превод",
+
+    save: "Запази", cancel: "Отказ", edit: "Редакция", del: "Изтрий", close: "Затвори", back: "← Назад",
+    name: "Име", category: "Категория", unit: "Мярка", price: "Цена", stock: "Наличност",
+    eik: "ЕИК", vatNumber: "ДДС номер", address: "Адрес", phone: "Телефон", email: "Имейл",
+    date: "Дата", client: "Клиент", total: "Общо", status: "Статус", payment: "Плащане", amount: "Сума",
+    note: "Бележка", noteOptional: "Бележка (по избор)",
+
+    errEnterName: "Въведете име.", errPriceMin: "Цената трябва да е число ≥ 0.", errStockMin: "Наличността трябва да е число ≥ 0.",
+    errEik: "ЕИК трябва да съдържа 9 или 13 цифри.", errVat: "Формат: BG + 9 или 10 цифри (напр. BG123456789).",
+    errVatShort: "Формат: BG + 9 или 10 цифри.", errPhone: "Телефонът трябва да съдържа 7–13 цифри.",
+    errEmail: "Невалиден имейл адрес.", errIban: "Формат: BG + 20 цифри/букви (общо 22 знака).",
+
+    connectTitle: "Свързване с облак (Supabase)",
+    connectHelp: "Създайте безплатен проект на <b>supabase.com</b>, изпълнете <code>supabase/schema.sql</code> от хранилището в неговия SQL Editor, после копирайте <b>Project URL</b> и <b>anon public key</b> от Settings → API тук.",
+    projectUrl: "Project URL", anonKey: "Anon public key", connect: "Свързване", fillBoth: "Попълнете и двете полета.",
+    supabaseLoadFail: "Не успяхме да заредим Supabase библиотеката (проверете интернет връзката и презаредете страницата).",
+
+    password: "Парола", signIn: "Вход", createAccount: "Създаване на профил", pleaseWait: "Моля, изчакайте…",
+    noAccount: "Нямате профил?", createNew: "Създайте нов", haveAccount: "Вече имате профил?",
+    wrongCredentials: "Грешен имейл или парола.",
+    accountCreated: "Профилът е създаден. Ако имейл потвърждението е включено в Supabase, проверете пощата си, после влезте.",
+    forgotPassword: "Забравена парола?", forgotTitle: "Забравена парола",
+    forgotHelp: "Въведете имейла на профила си и ще ви изпратим линк за задаване на нова парола.",
+    sendLink: "Изпрати линк", backToLogin: "Назад към вход", changeConnection: "Смяна на Supabase връзка",
+    resetSent: "Изпратихме линк за нова парола на {email}. Проверете пощата си, включително папка „Спам“.",
+    invalidEmail: "Въведете валиден имейл адрес.",
+    newPasswordTitle: "Нова парола", newPasswordHelp: "Задайте нова парола за профила си. Минимум 6 знака.",
+    newPasswordLabel: "Нова парола", repeatPassword: "Повторете новата парола", savePassword: "Запази новата парола",
+    passwordMin6: "Паролата трябва да е поне 6 знака.", passwordsDontMatch: "Двете пароли не съвпадат.",
+    passwordChanged: "Паролата е сменена успешно.", passwordChangedNotice: "Паролата е сменена успешно. Влезте с новата парола.",
+    linkExpired: "Линкът вече не е валиден (изтекъл, вече използван, или отворен на друго устройство). Поискайте нов линк.",
+    linkInvalidTitle: "Линкът не е валиден",
+    linkInvalidBody: "Линкът за нова парола не е активен — най-често защото е изтекъл, вече е бил използван веднъж, или е отворен на устройство, различно от това, на което е поискан.",
+    linkInvalidHelp: "Поискайте нов линк и го отворете на същото устройство, на което го заявявате.",
+    requestNewLink: "Поискай нов линк",
+    forgetConnectionConfirm: "Забравяне на връзката с Supabase на този компютър?",
+    loadingData: "Зареждане на данни…", logout: "Изход",
+
+    navDashboard: "Начало", navProducts: "Продукти", navCustomers: "Клиенти", navInvoices: "Фактури",
+    navOffers: "Оферти", navCash: "Каса", navReports: "Справки", navSettings: "Настройки", navBackup: "Данни / Резервно копие",
+    statusOnline: "На линия", statusOffline: "Офлайн — само преглед", statusSyncing: "Синхронизиране…",
+    savedToCloud: "Запазено в облака", saveErrorShort: "Грешка при запис", errorPrefix: "Грешка: ",
+    menu: "Меню", language: "Език",
+
+    turnoverThisMonth: "Оборот този месец", invoicesThisMonth: "Фактури този месец", unpaidInvoices: "Неплатени фактури",
+    recentDocuments: "Последни документи", noDocumentsYet: "Все още няма създадени документи.",
+    offlineBanner: "Няма връзка с интернет — виждате последно синхронизираните данни. Редакциите са изключени, докато връзката се възстанови.",
+    docInvoice: "Фактура", docOffer: "Оферта", docCredit: "Кредитно",
+
+    newProduct: "+ Нов продукт", noProducts: "Няма добавени продукти.", noProductsMatch: "Няма продукти, отговарящи на търсенето.",
+    searchProducts: "Търсене по име или категория…", deleteProductConfirm: "Изтриване на продукта?", productNamePlaceholder: "напр. Домати",
+    priceEur: "Цена (€)",
+
+    newCustomer: "+ Нов клиент", nameCompany: "Име / Фирма", details: "Детайли",
+    noCustomers: "Няма добавени клиенти.", noCustomersMatch: "Няма клиенти, отговарящи на търсенето.",
+    searchCustomers: "Търсене по име, ЕИК или телефон…", deleteCustomerConfirm: "Изтриване на клиента?",
+    customerNamePlaceholder: "напр. Ресторант Витоша ЕООД",
+
+    newInvoice: "+ Нова фактура", newOffer: "+ Нова оферта", excelCsv: "Excel / CSV",
+    numberShort: "№", viewPrint: "Преглед / Печат", toInvoice: "Във фактура", creditNoteBtn: "Кредитно",
+    noDocuments: "Няма създадени документи.", noDocumentsMatch: "Няма документи, отговарящи на търсенето.",
+    searchDocs: "Търсене по номер, клиент или дата…",
+    paidPill: "Платена", waitingPill: "Чака", towardsNo: "към № {n}", creditPrefix: "КИ № {n}",
+    noRegisteredCustomer: "Без регистриран клиент", vatRate: "ДДС ставка", paymentMethod: "Начин на плащане",
+    product: "Продукт", chooseProduct: "— избери продукт —", qty: "Кол-во", unitPlaceholder: "мярка",
+    addRow: "+ Добави ред", taxBase: "Данъчна основа", vatLabel: "ДДС", removeTitle: "Премахни",
+    saveChanges: "Запази промените", editDocTitle: "Редакция на {type} № {n}",
+    editDocHelp: "Номерът остава същият. Наличностите се преизчисляват спрямо промените.",
+    typeInvoice: "фактура", typeOffer: "оферта",
+    addAtLeastOneProduct: "Добавете поне един продукт.", numberingError: "Грешка при номериране: ",
+    convertConfirm: "Превръщане на оферта № {n} ({sum}) във фактура?",
+    convertedAlert: "Издадена фактура № {n} от оферта № {from}.",
+    docUpdated: "Документ № {n} е обновен.",
+    creditNotEditable: "Кредитните известия не се редактират. Изтрийте го и издайте ново.",
+    editWithCreditWarn: "Към фактура № {n} има издадено кредитно известие. Промяната тук няма да преизчисли кредитното. Да продължим ли?",
+    deleteDocConfirm: "Изтриване на {type} № {n} ({sum})? Номерът няма да бъде преизползван.{stock}",
+    stockWillRevert: " Наличностите на засегнатите продукти ще бъдат коригирани обратно.",
+    typeInvoiceGen: "фактура", typeOfferGen: "оферта", typeCreditGen: "кредитно известие",
+
+    creditFormTitle: "Кредитно известие към фактура № {n}",
+    creditFormHelp: "По подразбиране са зададени продадените количества — намалете или занулете редовете, които не се връщат.",
+    sold: "Продадено", toCredit: "За кредитиране", issueCreditNote: "Издай кредитно известие",
+    invalidQtyFor: "Невалидно количество за „{name}“.",
+    qtyExceedsSold: "Количеството за „{name}“ не може да е повече от продаденото ({qty}).",
+    selectAtLeastOneQty: "Изберете количество поне за един продукт.",
+    creditConfirm: "Издаване на кредитно известие за {n} артикул(а) на стойност {sum} към фактура № {inv}?",
+    creditIssued: "Издадено кредитно известие № {n} към фактура № {inv}.",
+
+    printInvoice: "ФАКТУРА", printOffer: "ОФЕРТА", printCredit: "КРЕДИТНО ИЗВЕСТИЕ",
+    printPdf: "Печат / PDF", supplier: "Доставчик", recipient: "Получател",
+    towardsInvoiceNo: "към фактура № {n}", dateColon: "Дата: {d}",
+    goodsService: "Стока / услуга", unitPrice: "Ед. цена", sum: "Сума",
+    paymentMethodColon: "Начин на плащане: {m}", totalToPay: "Общо за плащане",
+    preparedBy: "Съставил", receivedBy: "Получил", mol: "МОЛ",
+
+    cashTitle: "Каса", day: "Ден", expectedCash: "Очаквано в брой", expectedCard: "Очаквано с карта",
+    expectedBank: "Очаквано с банков превод", netForDay: "Нетно за деня ({inv} фактури, {ret} продажби на дребно)",
+    dayNotClosed: "Денят още не е приключен.", closeDay: "Приключи деня", editClosing: "Редакция на приключването",
+    countedCashLabel: "Преброена сума в брой (€)", diffVsExpected: "Разлика спрямо очакваното в брой: ",
+    saveClosing: "Запази приключване", countedInCash: "Преброено в брой: ", difference: "разлика: ",
+    history: "История", expectedCashCol: "Очаквано в брой", countedCol: "Преброено", diffCol: "Разлика",
+    noClosedDays: "Няма приключени дни още.", diffReasonPlaceholder: "напр. причина за разлика",
+    retailTitle: "Продажби на дребно (без фактура)", addEntry: "+ Добави постъпление",
+    noRetailEntries: "Няма добавени продажби на дребно за деня.", amountEur: "Сума (€)",
+    saveEntry: "Запази постъпление", deleteEntryConfirm: "Изтриване на това постъпление?",
+    enterValidAmount: "Въведете валидна сума (число > 0).", enterValidCounted: "Въведете валидна преброена сума (число ≥ 0).",
+    entryNotePlaceholder: "напр. клиент на място",
+
+    reportsTitle: "Справки", monthlyTurnover: "Оборот по месеци", topProducts: "Топ продукти по приход",
+    noDataYet: "Няма данни още.",
+
+    settingsTitle: "Настройки на фирмата", companyName: "Име на фирма / ЕТ",
+    nextInvoiceNo: "Следващ номер на фактура", nextOfferNo: "Следващ номер на оферта",
+    autoNumberHint: "Определя се автоматично от сървъра, за да не се дублират номера между устройства.",
+    saveSettings: "Запази настройки", settingsSaved: "Настройките са запазени.",
+    accountantHint: "Съвет: обсъдете със счетоводителя дали са нужни допълнителни стъпки, преди да започнете да изпращате фактури на клиенти.",
+
+    backupTitle: "Данни / Резервно копие",
+    cloudInfo: "Данните вече се пазят в облак (Supabase), синхронизирани на живо между всички устройства, на които влезете с този профил. Секцията по-долу е за допълнителна лична резервна копия и за пренасяне на данни от стария офлайн файл.",
+    downloadBackupTitle: "Изтегляне на резервно копие",
+    downloadBackupHint: "Препоръчително веднъж месечно, като допълнителна застраховка извън облака.",
+    downloadBackupBtn: "Изтегли резервно копие (JSON)",
+    uploadTitle: "Качване на данни от файл",
+    uploadHint: "Избери JSON файл (стар офлайн бекъп, или каталог с продукти) — данните ще се добавят към облака, без да трият текущите.",
+    uploadBtn: "Качи файл (JSON)",
+    importConfirm: "Ще се добавят {p} продукта, {c} клиента и {d} документа към текущите данни в облака (нищо няма да се изтрие). Продължи?",
+    importSuccess: "Данните са качени успешно.",
+    importFail: "Файлът не изглежда да е валиден резервен файл, или качването се провали: "
+  },
+  en: {
+    appName: "ShopAssistant",
+    unit_кг: "kg", unit_бр: "pcs", unit_оп: "pack", unit_л: "l", unit_г: "g",
+    cat_Плодове: "Fruit", "cat_Зеленчуци": "Vegetables", cat_Напитки: "Drinks", cat_Подправки: "Spices",
+    "cat_Ориз и зърнени": "Rice & grains", cat_Сладки: "Sweets", cat_Други: "Other",
+    pay_cash: "Cash", pay_card: "Card", pay_bank: "Bank transfer",
+
+    save: "Save", cancel: "Cancel", edit: "Edit", del: "Delete", close: "Close", back: "← Back",
+    name: "Name", category: "Category", unit: "Unit", price: "Price", stock: "Stock",
+    eik: "Company ID", vatNumber: "VAT number", address: "Address", phone: "Phone", email: "Email",
+    date: "Date", client: "Customer", total: "Total", status: "Status", payment: "Payment", amount: "Amount",
+    note: "Note", noteOptional: "Note (optional)",
+
+    errEnterName: "Enter a name.", errPriceMin: "Price must be a number ≥ 0.", errStockMin: "Stock must be a number ≥ 0.",
+    errEik: "Company ID must be 9 or 13 digits.", errVat: "Format: BG + 9 or 10 digits (e.g. BG123456789).",
+    errVatShort: "Format: BG + 9 or 10 digits.", errPhone: "Phone must contain 7–13 digits.",
+    errEmail: "Invalid email address.", errIban: "Format: BG + 20 digits/letters (22 characters total).",
+
+    connectTitle: "Connect to the cloud (Supabase)",
+    connectHelp: "Create a free project at <b>supabase.com</b>, run <code>supabase/schema.sql</code> from the repository in its SQL Editor, then copy the <b>Project URL</b> and <b>anon public key</b> from Settings → API here.",
+    projectUrl: "Project URL", anonKey: "Anon public key", connect: "Connect", fillBoth: "Please fill in both fields.",
+    supabaseLoadFail: "Could not load the Supabase library (check your internet connection and reload the page).",
+
+    password: "Password", signIn: "Sign in", createAccount: "Create account", pleaseWait: "Please wait…",
+    noAccount: "No account yet?", createNew: "Create one", haveAccount: "Already have an account?",
+    wrongCredentials: "Wrong email or password.",
+    accountCreated: "Account created. If email confirmation is enabled in Supabase, check your inbox, then sign in.",
+    forgotPassword: "Forgot password?", forgotTitle: "Forgot password",
+    forgotHelp: "Enter your account email and we'll send you a link to set a new password.",
+    sendLink: "Send link", backToLogin: "Back to sign in", changeConnection: "Change Supabase connection",
+    resetSent: "We sent a password reset link to {email}. Check your inbox, including the spam folder.",
+    invalidEmail: "Enter a valid email address.",
+    newPasswordTitle: "New password", newPasswordHelp: "Set a new password for your account. Minimum 6 characters.",
+    newPasswordLabel: "New password", repeatPassword: "Repeat new password", savePassword: "Save new password",
+    passwordMin6: "Password must be at least 6 characters.", passwordsDontMatch: "The two passwords don't match.",
+    passwordChanged: "Password changed successfully.", passwordChangedNotice: "Password changed successfully. Sign in with the new password.",
+    linkExpired: "This link is no longer valid (expired, already used, or opened on a different device). Request a new one.",
+    linkInvalidTitle: "Link is not valid",
+    linkInvalidBody: "The password reset link isn't active — usually because it expired, was already used once, or was opened on a different device than the one that requested it.",
+    linkInvalidHelp: "Request a new link and open it on the same device you requested it from.",
+    requestNewLink: "Request a new link",
+    forgetConnectionConfirm: "Forget the Supabase connection on this device?",
+    loadingData: "Loading data…", logout: "Sign out",
+
+    navDashboard: "Home", navProducts: "Products", navCustomers: "Customers", navInvoices: "Invoices",
+    navOffers: "Quotes", navCash: "Cash register", navReports: "Reports", navSettings: "Settings", navBackup: "Data / Backup",
+    statusOnline: "Online", statusOffline: "Offline — view only", statusSyncing: "Syncing…",
+    savedToCloud: "Saved to the cloud", saveErrorShort: "Save failed", errorPrefix: "Error: ",
+    menu: "Menu", language: "Language",
+
+    turnoverThisMonth: "Turnover this month", invoicesThisMonth: "Invoices this month", unpaidInvoices: "Unpaid invoices",
+    recentDocuments: "Recent documents", noDocumentsYet: "No documents created yet.",
+    offlineBanner: "No internet connection — you're seeing the last synced data. Editing is disabled until the connection is back.",
+    docInvoice: "Invoice", docOffer: "Quote", docCredit: "Credit note",
+
+    newProduct: "+ New product", noProducts: "No products added.", noProductsMatch: "No products match your search.",
+    searchProducts: "Search by name or category…", deleteProductConfirm: "Delete this product?", productNamePlaceholder: "e.g. Tomatoes",
+    priceEur: "Price (€)",
+
+    newCustomer: "+ New customer", nameCompany: "Name / Company", details: "Details",
+    noCustomers: "No customers added.", noCustomersMatch: "No customers match your search.",
+    searchCustomers: "Search by name, ID or phone…", deleteCustomerConfirm: "Delete this customer?",
+    customerNamePlaceholder: "e.g. Vitosha Restaurant Ltd",
+
+    newInvoice: "+ New invoice", newOffer: "+ New quote", excelCsv: "Excel / CSV",
+    numberShort: "No.", viewPrint: "View / Print", toInvoice: "To invoice", creditNoteBtn: "Credit note",
+    noDocuments: "No documents created.", noDocumentsMatch: "No documents match your search.",
+    searchDocs: "Search by number, customer or date…",
+    paidPill: "Paid", waitingPill: "Pending", towardsNo: "for No. {n}", creditPrefix: "CN No. {n}",
+    noRegisteredCustomer: "No registered customer", vatRate: "VAT rate", paymentMethod: "Payment method",
+    product: "Product", chooseProduct: "— choose a product —", qty: "Qty", unitPlaceholder: "unit",
+    addRow: "+ Add row", taxBase: "Net amount", vatLabel: "VAT", removeTitle: "Remove",
+    saveChanges: "Save changes", editDocTitle: "Editing {type} No. {n}",
+    editDocHelp: "The number stays the same. Stock is recalculated against your changes.",
+    typeInvoice: "invoice", typeOffer: "quote",
+    addAtLeastOneProduct: "Add at least one product.", numberingError: "Numbering error: ",
+    convertConfirm: "Convert quote No. {n} ({sum}) into an invoice?",
+    convertedAlert: "Invoice No. {n} issued from quote No. {from}.",
+    docUpdated: "Document No. {n} updated.",
+    creditNotEditable: "Credit notes can't be edited. Delete it and issue a new one.",
+    editWithCreditWarn: "Invoice No. {n} already has a credit note against it. Editing here won't recalculate that credit note. Continue?",
+    deleteDocConfirm: "Delete {type} No. {n} ({sum})? The number will not be reused.{stock}",
+    stockWillRevert: " Stock for the affected products will be adjusted back.",
+    typeInvoiceGen: "invoice", typeOfferGen: "quote", typeCreditGen: "credit note",
+
+    creditFormTitle: "Credit note for invoice No. {n}",
+    creditFormHelp: "Quantities default to what was sold — reduce or zero out the lines that aren't being returned.",
+    sold: "Sold", toCredit: "To credit", issueCreditNote: "Issue credit note",
+    invalidQtyFor: "Invalid quantity for \"{name}\".",
+    qtyExceedsSold: "Quantity for \"{name}\" can't exceed what was sold ({qty}).",
+    selectAtLeastOneQty: "Set a quantity for at least one product.",
+    creditConfirm: "Issue a credit note for {n} item(s) worth {sum} against invoice No. {inv}?",
+    creditIssued: "Credit note No. {n} issued for invoice No. {inv}.",
+
+    printInvoice: "INVOICE", printOffer: "QUOTE", printCredit: "CREDIT NOTE",
+    printPdf: "Print / PDF", supplier: "Supplier", recipient: "Recipient",
+    towardsInvoiceNo: "for invoice No. {n}", dateColon: "Date: {d}",
+    goodsService: "Goods / service", unitPrice: "Unit price", sum: "Amount",
+    paymentMethodColon: "Payment method: {m}", totalToPay: "Total due",
+    preparedBy: "Issued by", receivedBy: "Received by", mol: "Resp. person",
+
+    cashTitle: "Cash register", day: "Day", expectedCash: "Expected in cash", expectedCard: "Expected by card",
+    expectedBank: "Expected by bank transfer", netForDay: "Net for the day ({inv} invoices, {ret} retail sales)",
+    dayNotClosed: "This day hasn't been closed yet.", closeDay: "Close the day", editClosing: "Edit closing",
+    countedCashLabel: "Counted cash (€)", diffVsExpected: "Difference vs expected cash: ",
+    saveClosing: "Save closing", countedInCash: "Counted in cash: ", difference: "difference: ",
+    history: "History", expectedCashCol: "Expected in cash", countedCol: "Counted", diffCol: "Difference",
+    noClosedDays: "No closed days yet.", diffReasonPlaceholder: "e.g. reason for the difference",
+    retailTitle: "Retail sales (no invoice)", addEntry: "+ Add entry",
+    noRetailEntries: "No retail sales recorded for this day.", amountEur: "Amount (€)",
+    saveEntry: "Save entry", deleteEntryConfirm: "Delete this entry?",
+    enterValidAmount: "Enter a valid amount (number > 0).", enterValidCounted: "Enter a valid counted amount (number ≥ 0).",
+    entryNotePlaceholder: "e.g. walk-in customer",
+
+    reportsTitle: "Reports", monthlyTurnover: "Turnover by month", topProducts: "Top products by revenue",
+    noDataYet: "No data yet.",
+
+    settingsTitle: "Company settings", companyName: "Company name",
+    nextInvoiceNo: "Next invoice number", nextOfferNo: "Next quote number",
+    autoNumberHint: "Assigned automatically by the server so numbers can't be duplicated across devices.",
+    saveSettings: "Save settings", settingsSaved: "Settings saved.",
+    accountantHint: "Tip: check with your accountant whether any further steps are needed before you start sending invoices to customers.",
+
+    backupTitle: "Data / Backup",
+    cloudInfo: "Your data is stored in the cloud (Supabase) and synced live across every device you sign in on. The section below is for an extra personal backup and for importing data from the old offline file.",
+    downloadBackupTitle: "Download a backup",
+    downloadBackupHint: "Worth doing monthly, as extra insurance outside the cloud.",
+    downloadBackupBtn: "Download backup (JSON)",
+    uploadTitle: "Import data from a file",
+    uploadHint: "Pick a JSON file (an old offline backup, or a product catalog) — the data is added to the cloud without deleting anything.",
+    uploadBtn: "Upload file (JSON)",
+    importConfirm: "{p} products, {c} customers and {d} documents will be added to your current cloud data (nothing will be deleted). Continue?",
+    importSuccess: "Data imported successfully.",
+    importFail: "That doesn't look like a valid backup file, or the upload failed: "
+  }
+};
+
+let lang = (function () {
+  try { const saved = localStorage.getItem(LANG_KEY); if (saved === "bg" || saved === "en") return saved; } catch (e) {}
+  return "bg";
+})();
+
+function t(key, params) {
+  let s = (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || (TRANSLATIONS.bg[key] != null ? TRANSLATIONS.bg[key] : key);
+  if (params) for (const k in params) s = s.split("{" + k + "}").join(params[k]);
+  return s;
+}
+function unitLabel(u) { const k = "unit_" + u; return (TRANSLATIONS[lang] && TRANSLATIONS[lang][k]) || u; }
+function categoryLabel(c) { const k = "cat_" + c; return (TRANSLATIONS[lang] && TRANSLATIONS[lang][k]) || c; }
+function paymentLabel(m) { return t("pay_" + (m || "cash")); }
+function setLang(next) {
+  lang = next;
+  try { localStorage.setItem(LANG_KEY, next); } catch (e) {}
+  document.documentElement.lang = next;
+  document.title = t("appName");
+  render();
+}
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function money(n) {
   const v = Number(n) || 0;
-  return v.toLocaleString("bg-BG", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return v.toLocaleString(lang === "en" ? "en-IE" : "bg-BG", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -262,25 +574,25 @@ function isValidStockValue(v) { if (v === "" || v == null) return true; const n 
 
 function validateProduct(p) {
   const errs = {};
-  if (!p.name || !p.name.trim()) errs.name = "Въведете име.";
-  if (!isValidMoney(p.price)) errs.price = "Цената трябва да е число ≥ 0.";
-  if (!isValidStockValue(p.stock)) errs.stock = "Наличността трябва да е число ≥ 0.";
+  if (!p.name || !p.name.trim()) errs.name = t("errEnterName");
+  if (!isValidMoney(p.price)) errs.price = t("errPriceMin");
+  if (!isValidStockValue(p.stock)) errs.stock = t("errStockMin");
   return errs;
 }
 function validateCustomer(c) {
   const errs = {};
-  if (!c.name || !c.name.trim()) errs.name = "Въведете име.";
-  if (!isValidEIK(c.eik)) errs.eik = "ЕИК трябва да съдържа 9 или 13 цифри.";
-  if (!isValidVAT(c.vatNumber)) errs.vatNumber = "Формат: BG + 9 или 10 цифри (напр. BG123456789).";
-  if (!isValidPhone(c.phone)) errs.phone = "Телефонът трябва да съдържа 7–13 цифри.";
-  if (!isValidEmail(c.email)) errs.email = "Невалиден имейл адрес.";
+  if (!c.name || !c.name.trim()) errs.name = t("errEnterName");
+  if (!isValidEIK(c.eik)) errs.eik = t("errEik");
+  if (!isValidVAT(c.vatNumber)) errs.vatNumber = t("errVat");
+  if (!isValidPhone(c.phone)) errs.phone = t("errPhone");
+  if (!isValidEmail(c.email)) errs.email = t("errEmail");
   return errs;
 }
 function validateSettings(s) {
   const errs = {};
-  if (!isValidEIK(s.eik)) errs.eik = "ЕИК трябва да съдържа 9 или 13 цифри.";
-  if (!isValidVAT(s.vatNumber)) errs.vatNumber = "Формат: BG + 9 или 10 цифри.";
-  if (!isValidIBAN(s.iban)) errs.iban = "Формат: BG + 20 цифри/букви (общо 22 знака).";
+  if (!isValidEIK(s.eik)) errs.eik = t("errEik");
+  if (!isValidVAT(s.vatNumber)) errs.vatNumber = t("errVatShort");
+  if (!isValidIBAN(s.iban)) errs.iban = t("errIban");
   return errs;
 }
 function fieldError(errs, key) { return errs[key] ? `<div class="field-error">${esc(errs[key])}</div>` : ""; }
@@ -296,7 +608,7 @@ function defaultState() {
   };
 }
 
-const PAYMENT_METHODS = { cash: "В брой", card: "С карта", bank: "Банков превод" };
+const PAYMENT_METHOD_KEYS = ["cash", "card", "bank"];
 
 // ---------- row <-> app-object mapping (DB uses snake_case) ----------
 function settingsRowToObj(row) {
@@ -416,10 +728,12 @@ function isRecoveryUrl() {
 async function boot() {
   // Set before anything else can rewrite the URL and erase the marker.
   if (isRecoveryUrl()) recoveryMode = true;
+  document.documentElement.lang = lang;
+  document.title = t("appName");
   applySharedConfigFromUrl();
   if (!cfg || !cfg.url || !cfg.anonKey) { render(); return; }
   if (typeof supabase === "undefined") {
-    authError = "Не успяхме да заредим Supabase библиотеката (проверете интернет връзката и презаредете страницата).";
+    authError = t("supabaseLoadFail");
     render();
     return;
   }
@@ -517,7 +831,7 @@ async function refetchTable(table) {
 function flashSaved(ok, msg) {
   syncStatus = ok ? "online" : "error";
   const flash = document.getElementById("save-flash");
-  if (flash) { flash.textContent = msg || (ok ? "Запазено в облака" : "Грешка при запис"); setTimeout(() => { if (flash) flash.textContent = ""; }, 1800); }
+  if (flash) { flash.textContent = msg || (ok ? t("savedToCloud") : t("saveErrorShort")); setTimeout(() => { if (flash) flash.textContent = ""; }, 1800); }
 }
 
 // =========================================================================
@@ -526,22 +840,33 @@ function flashSaved(ok, msg) {
 let connForm = { url: "", anonKey: "" };
 function updateConnField(field, value) { connForm[field] = value; }
 function saveConnection() {
-  if (!connForm.url.trim() || !connForm.anonKey.trim()) { authError = "Попълнете и двете полета."; render(); return; }
+  if (!connForm.url.trim() || !connForm.anonKey.trim()) { authError = t("fillBoth"); render(); return; }
   saveConfig({ url: connForm.url.trim(), anonKey: connForm.anonKey.trim() });
   cfg = loadConfig();
   authError = "";
   boot();
 }
+// Language picker shown on the pre-login screens, where there's no sidebar.
+function renderLangToggle() {
+  return `
+    <div class="lang-toggle" role="group" aria-label="${t("language")}">
+      <button class="${lang === "bg" ? "active" : ""}" onclick="setLang('bg')">БГ</button>
+      <button class="${lang === "en" ? "active" : ""}" onclick="setLang('en')">EN</button>
+    </div>
+  `;
+}
+
 function renderConnectionSetup() {
   return `
     <div class="auth-wrap">
       <div class="auth-card">
-        <h2>Свързване с облак (Supabase)</h2>
-        <p class="muted" style="font-size:13px;">Създайте безплатен проект на <b>supabase.com</b>, изпълнете <code>supabase/schema.sql</code> от хранилището в неговия SQL Editor, после копирайте <b>Project URL</b> и <b>anon public key</b> от Settings → API тук.</p>
+        ${renderLangToggle()}
+        <h2>${t("connectTitle")}</h2>
+        <p class="muted" style="font-size:13px;">${t("connectHelp")}</p>
         ${authError ? `<div class="error-box">${esc(authError)}</div>` : ""}
-        <div class="field-wrap"><label class="field">Project URL</label><input value="${esc(connForm.url)}" oninput="updateConnField('url', this.value)" placeholder="https://xxxx.supabase.co"></div>
-        <div class="field-wrap"><label class="field">Anon public key</label><input value="${esc(connForm.anonKey)}" oninput="updateConnField('anonKey', this.value)" placeholder="eyJhbGciOi..."></div>
-        <button class="primary" style="width:100%;" onclick="saveConnection()">Свързване</button>
+        <div class="field-wrap"><label class="field">${t("projectUrl")}</label><input value="${esc(connForm.url)}" oninput="updateConnField('url', this.value)" placeholder="https://xxxx.supabase.co"></div>
+        <div class="field-wrap"><label class="field">${t("anonKey")}</label><input value="${esc(connForm.anonKey)}" oninput="updateConnField('anonKey', this.value)" placeholder="eyJhbGciOi..."></div>
+        <button class="primary" style="width:100%;" onclick="saveConnection()">${t("connect")}</button>
       </div>
     </div>
   `;
@@ -559,14 +884,14 @@ async function doLogin() {
   authBusy = true; authError = ""; authNotice = ""; render();
   const { error } = await supabaseClient.auth.signInWithPassword({ email: authForm.email.trim(), password: authForm.password });
   authBusy = false;
-  if (error) { authError = error.message === "Invalid login credentials" ? "Грешен имейл или парола." : error.message; render(); }
+  if (error) { authError = error.message === "Invalid login credentials" ? t("wrongCredentials") : error.message; render(); }
 }
 async function doSignup() {
   authBusy = true; authError = ""; authNotice = ""; render();
   const { error } = await supabaseClient.auth.signUp({ email: authForm.email.trim(), password: authForm.password });
   authBusy = false;
   if (error) { authError = error.message; render(); return; }
-  authNotice = "Профилът е създаден. Ако имейл потвърждението е включено в Supabase, проверете пощата си, после влезте.";
+  authNotice = t("accountCreated");
   authScreen = "login"; render();
 }
 // Sends a Supabase recovery email. The link in it brings the user back here
@@ -574,23 +899,23 @@ async function doSignup() {
 // (see boot) so they can set a new password.
 async function doPasswordReset() {
   const email = authForm.email.trim();
-  if (!email || !isValidEmail(email)) { authError = "Въведете валиден имейл адрес."; render(); return; }
+  if (!email || !isValidEmail(email)) { authError = t("invalidEmail"); render(); return; }
   authBusy = true; authError = ""; authNotice = ""; render();
   const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
   authBusy = false;
   if (error) { authError = error.message; render(); return; }
-  authNotice = `Изпратихме линк за нова парола на ${email}. Проверете пощата си, включително папка „Спам“.`;
+  authNotice = t("resetSent", { email });
   authScreen = "login"; render();
 }
 async function doUpdatePassword() {
-  if (!newPasswordForm.password || newPasswordForm.password.length < 6) { authError = "Паролата трябва да е поне 6 знака."; render(); return; }
-  if (newPasswordForm.password !== newPasswordForm.confirm) { authError = "Двете пароли не съвпадат."; render(); return; }
+  if (!newPasswordForm.password || newPasswordForm.password.length < 6) { authError = t("passwordMin6"); render(); return; }
+  if (newPasswordForm.password !== newPasswordForm.confirm) { authError = t("passwordsDontMatch"); render(); return; }
   authBusy = true; authError = ""; render();
   const { error } = await supabaseClient.auth.updateUser({ password: newPasswordForm.password });
   authBusy = false;
   if (error) {
     authError = /session missing|session_not_found|Auth session/i.test(error.message)
-      ? "Линкът вече не е валиден (изтекъл, вече използван, или отворен на друго устройство). Поискайте нов линк."
+      ? t("linkExpired")
       : error.message;
     render();
     return;
@@ -598,8 +923,8 @@ async function doUpdatePassword() {
   newPasswordForm = { password: "", confirm: "" };
   recoveryMode = false;
   history.replaceState({}, "", location.pathname);
-  authNotice = "Паролата е сменена успешно. Влезте с новата парола.";
-  alert("Паролата е сменена успешно.");
+  authNotice = t("passwordChangedNotice");
+  alert(t("passwordChanged"));
   if (session && !dataLoaded) { render(); await loadAllData(); } else { render(); }
 }
 function cancelRecovery() {
@@ -613,7 +938,7 @@ async function doLogout() {
   dataLoaded = false; state = defaultState();
   render();
 }
-function forgetConnection() { if (confirm("Забравяне на връзката с Supabase на този компютър?")) { clearConfig(); location.reload(); } }
+function forgetConnection() { if (confirm(t("forgetConnectionConfirm"))) { clearConfig(); location.reload(); } }
 
 function renderAuth() {
   const isLogin = authScreen === "login";
@@ -626,12 +951,13 @@ function renderAuth() {
     return `
       <div class="auth-wrap">
         <div class="auth-card">
-          <h2>Забравена парола</h2>
-          <p class="muted" style="font-size:13px;">Въведете имейла на профила си и ще ви изпратим линк за задаване на нова парола.</p>
+          ${renderLangToggle()}
+          <h2>${t("forgotTitle")}</h2>
+          <p class="muted" style="font-size:13px;">${t("forgotHelp")}</p>
           ${messages}
-          <div class="field-wrap"><label class="field">Имейл</label><input type="email" value="${esc(authForm.email)}" oninput="updateAuthField('email', this.value)"></div>
-          <button class="primary" style="width:100%;" ${authBusy ? "disabled" : ""} onclick="doPasswordReset()">${authBusy ? "Моля, изчакайте…" : "Изпрати линк"}</button>
-          <div class="auth-toggle"><a onclick="switchAuthScreen('login')">Назад към вход</a></div>
+          <div class="field-wrap"><label class="field">${t("email")}</label><input type="email" value="${esc(authForm.email)}" oninput="updateAuthField('email', this.value)"></div>
+          <button class="primary" style="width:100%;" ${authBusy ? "disabled" : ""} onclick="doPasswordReset()">${authBusy ? t("pleaseWait") : t("sendLink")}</button>
+          <div class="auth-toggle"><a onclick="switchAuthScreen('login')">${t("backToLogin")}</a></div>
         </div>
       </div>
     `;
@@ -639,16 +965,17 @@ function renderAuth() {
   return `
     <div class="auth-wrap">
       <div class="auth-card">
-        <h2>Свежо и Вкусно</h2>
+        ${renderLangToggle()}
+        <h2>${t("appName")}</h2>
         ${messages}
-        <div class="field-wrap"><label class="field">Имейл</label><input type="email" value="${esc(authForm.email)}" oninput="updateAuthField('email', this.value)"></div>
-        <div class="field-wrap"><label class="field">Парола</label><input type="password" value="${esc(authForm.password)}" oninput="updateAuthField('password', this.value)"></div>
-        <button class="primary" style="width:100%;" ${authBusy ? "disabled" : ""} onclick="${isLogin ? "doLogin()" : "doSignup()"}">${authBusy ? "Моля, изчакайте…" : (isLogin ? "Вход" : "Създаване на профил")}</button>
-        ${isLogin ? `<div class="auth-toggle"><a onclick="switchAuthScreen('reset')">Забравена парола?</a></div>` : ""}
+        <div class="field-wrap"><label class="field">${t("email")}</label><input type="email" value="${esc(authForm.email)}" oninput="updateAuthField('email', this.value)"></div>
+        <div class="field-wrap"><label class="field">${t("password")}</label><input type="password" value="${esc(authForm.password)}" oninput="updateAuthField('password', this.value)"></div>
+        <button class="primary" style="width:100%;" ${authBusy ? "disabled" : ""} onclick="${isLogin ? "doLogin()" : "doSignup()"}">${authBusy ? t("pleaseWait") : (isLogin ? t("signIn") : t("createAccount"))}</button>
+        ${isLogin ? `<div class="auth-toggle"><a onclick="switchAuthScreen('reset')">${t("forgotPassword")}</a></div>` : ""}
         <div class="auth-toggle">
-          ${isLogin ? `Нямате профил? <a onclick="switchAuthScreen('signup')">Създайте нов</a>` : `Вече имате профил? <a onclick="switchAuthScreen('login')">Вход</a>`}
+          ${isLogin ? `${t("noAccount")} <a onclick="switchAuthScreen('signup')">${t("createNew")}</a>` : `${t("haveAccount")} <a onclick="switchAuthScreen('login')">${t("signIn")}</a>`}
         </div>
-        <div class="auth-toggle"><a onclick="forgetConnection()">Смяна на Supabase връзка</a></div>
+        <div class="auth-toggle"><a onclick="forgetConnection()">${t("changeConnection")}</a></div>
       </div>
     </div>
   `;
@@ -662,12 +989,13 @@ function renderNewPassword() {
     return `
       <div class="auth-wrap">
         <div class="auth-card">
-          <h2>Линкът не е валиден</h2>
-          <div class="error-box">Линкът за нова парола не е активен — най-често защото е изтекъл, вече е бил използван веднъж, или е отворен на устройство, различно от това, на което е поискан.</div>
-          <p class="muted" style="font-size:13px;">Поискайте нов линк и го отворете на същото устройство, на което го заявявате.</p>
-          <button class="primary" style="width:100%;" onclick="cancelRecovery(); switchAuthScreen('reset')">Поискай нов линк</button>
-          <div class="auth-toggle"><a onclick="cancelRecovery()">Назад към вход</a></div>
-          <div class="auth-toggle"><a onclick="forgetConnection()">Смяна на Supabase връзка</a></div>
+          ${renderLangToggle()}
+          <h2>${t("linkInvalidTitle")}</h2>
+          <div class="error-box">${t("linkInvalidBody")}</div>
+          <p class="muted" style="font-size:13px;">${t("linkInvalidHelp")}</p>
+          <button class="primary" style="width:100%;" onclick="cancelRecovery(); switchAuthScreen('reset')">${t("requestNewLink")}</button>
+          <div class="auth-toggle"><a onclick="cancelRecovery()">${t("backToLogin")}</a></div>
+          <div class="auth-toggle"><a onclick="forgetConnection()">${t("changeConnection")}</a></div>
         </div>
       </div>
     `;
@@ -675,13 +1003,14 @@ function renderNewPassword() {
   return `
     <div class="auth-wrap">
       <div class="auth-card">
-        <h2>Нова парола</h2>
-        <p class="muted" style="font-size:13px;">Задайте нова парола за профила си. Минимум 6 знака.</p>
+        ${renderLangToggle()}
+        <h2>${t("newPasswordTitle")}</h2>
+        <p class="muted" style="font-size:13px;">${t("newPasswordHelp")}</p>
         ${authError ? `<div class="error-box">${esc(authError)}</div>` : ""}
-        <div class="field-wrap"><label class="field">Нова парола</label><input type="password" value="${esc(newPasswordForm.password)}" oninput="updateNewPasswordField('password', this.value)"></div>
-        <div class="field-wrap"><label class="field">Повторете новата парола</label><input type="password" value="${esc(newPasswordForm.confirm)}" oninput="updateNewPasswordField('confirm', this.value)"></div>
-        <button class="primary" style="width:100%;" ${authBusy ? "disabled" : ""} onclick="doUpdatePassword()">${authBusy ? "Моля, изчакайте…" : "Запази новата парола"}</button>
-        <div class="auth-toggle"><a onclick="cancelRecovery()">Назад към вход</a></div>
+        <div class="field-wrap"><label class="field">${t("newPasswordLabel")}</label><input type="password" value="${esc(newPasswordForm.password)}" oninput="updateNewPasswordField('password', this.value)"></div>
+        <div class="field-wrap"><label class="field">${t("repeatPassword")}</label><input type="password" value="${esc(newPasswordForm.confirm)}" oninput="updateNewPasswordField('confirm', this.value)"></div>
+        <button class="primary" style="width:100%;" ${authBusy ? "disabled" : ""} onclick="doUpdatePassword()">${authBusy ? t("pleaseWait") : t("savePassword")}</button>
+        <div class="auth-toggle"><a onclick="cancelRecovery()">${t("backToLogin")}</a></div>
       </div>
     </div>
   `;
@@ -723,7 +1052,7 @@ function renderSearchBox(kind, value, placeholder, shownCount, totalCount) {
   return `
     <div class="search-row no-print">
       <input id="search-${kind}" class="search-box" value="${esc(value)}" oninput="updateSearch('${kind}', this.value)" placeholder="${esc(placeholder)}">
-      ${value.trim() ? `<span class="muted" style="font-size:12px;">${shownCount} от ${totalCount}${shownCount === 0 ? " — няма съвпадения" : ""}</span>` : ""}
+      ${value.trim() ? `<span class="muted" style="font-size:12px;">${shownCount} / ${totalCount}</span>` : ""}
     </div>
   `;
 }
@@ -734,13 +1063,13 @@ function render() {
   if (!supabaseClient) { root.innerHTML = renderConnectionSetup(); return; }
   if (recoveryMode) { root.innerHTML = renderNewPassword(); return; }
   if (!session) { root.innerHTML = renderAuth(); return; }
-  if (!dataLoaded) { root.innerHTML = `<div class="auth-wrap"><div class="muted">Зареждане на данни…</div></div>`; return; }
+  if (!dataLoaded) { root.innerHTML = `<div class="auth-wrap"><div class="muted">${t("loadingData")}</div></div>`; return; }
 
   root.innerHTML = `
     <div class="app">
       <div class="mobile-topbar no-print">
-        <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Меню">☰</button>
-        <div class="brand">Свежо и Вкусно</div>
+        <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="${t("menu")}">☰</button>
+        <div class="brand">${t("appName")}</div>
       </div>
       <div class="sidebar-overlay no-print ${sidebarOpen ? "open" : ""}" onclick="toggleSidebar()"></div>
       <nav class="sidebar no-print ${sidebarOpen ? "open" : ""}" id="sidebar"></nav>
@@ -752,8 +1081,8 @@ function render() {
   if (currentTab === "dashboard") content.innerHTML = renderDashboard();
   else if (currentTab === "products") content.innerHTML = renderProducts();
   else if (currentTab === "customers") content.innerHTML = renderCustomers();
-  else if (currentTab === "invoices") content.innerHTML = renderDocuments("invoice", "Фактури");
-  else if (currentTab === "offers") content.innerHTML = renderDocuments("offer", "Оферти");
+  else if (currentTab === "invoices") content.innerHTML = renderDocuments("invoice", t("navInvoices"));
+  else if (currentTab === "offers") content.innerHTML = renderDocuments("offer", t("navOffers"));
   else if (currentTab === "cash") content.innerHTML = renderCash();
   else if (currentTab === "reports") content.innerHTML = renderReports();
   else if (currentTab === "settings") content.innerHTML = renderSettings();
@@ -762,20 +1091,21 @@ function render() {
 
 function renderSidebar() {
   const items = [
-    ["dashboard", "Начало"], ["products", "Продукти"], ["customers", "Клиенти"],
-    ["invoices", "Фактури"], ["offers", "Оферти"], ["cash", "Каса"], ["reports", "Справки"],
-    ["settings", "Настройки"], ["backup", "Данни / Резервно копие"]
+    ["dashboard", t("navDashboard")], ["products", t("navProducts")], ["customers", t("navCustomers")],
+    ["invoices", t("navInvoices")], ["offers", t("navOffers")], ["cash", t("navCash")], ["reports", t("navReports")],
+    ["settings", t("navSettings")], ["backup", t("navBackup")]
   ];
   const statusClass = offline ? "offline" : (syncStatus === "syncing" ? "syncing" : "online");
-  const statusText = offline ? "Офлайн — само преглед" : (syncStatus === "syncing" ? "Синхронизиране…" : "На линия");
+  const statusText = offline ? t("statusOffline") : (syncStatus === "syncing" ? t("statusSyncing") : t("statusOnline"));
   document.getElementById("sidebar").innerHTML = `
-    <div class="brand">Свежо и Вкусно</div>
+    <div class="brand">${t("appName")}</div>
     <div class="sync-status ${statusClass}">${statusText}</div>
     ${items.map(([id, label]) => `<button class="navbtn ${currentTab === id ? "active" : ""}" onclick="setTab('${id}')">${label}</button>`).join("")}
     <div class="save-flash" id="save-flash"></div>
     <div class="sidebar-footer">
+      ${renderLangToggle()}
       ${esc(session.user.email)}<br>
-      <a onclick="doLogout()" style="cursor:pointer; text-decoration:underline;">Изход</a>
+      <a onclick="doLogout()" style="cursor:pointer; text-decoration:underline;">${t("logout")}</a>
     </div>
   `;
 }
@@ -789,18 +1119,18 @@ function renderDashboard() {
   const unpaid = invoices.filter(d => !d.paid);
   const recent = state.documents.slice(-5).reverse();
   return `
-    <h2>Начало</h2>
-    ${offline ? `<div class="backup-warning">Няма връзка с интернет — виждате последно синхронизираните данни. Редакциите са изключени, докато връзката се възстанови.</div>` : ""}
+    <h2>${t("navDashboard")}</h2>
+    ${offline ? `<div class="backup-warning">${t("offlineBanner")}</div>` : ""}
     <div class="metrics-grid">
-      <div class="metric"><div class="label">Оборот този месец</div><div class="value">${money(monthTotal)}</div></div>
-      <div class="metric"><div class="label">Фактури този месец</div><div class="value">${thisMonth.length}</div></div>
-      <div class="metric"><div class="label">Неплатени фактури</div><div class="value">${unpaid.length}</div></div>
+      <div class="metric"><div class="label">${t("turnoverThisMonth")}</div><div class="value">${money(monthTotal)}</div></div>
+      <div class="metric"><div class="label">${t("invoicesThisMonth")}</div><div class="value">${thisMonth.length}</div></div>
+      <div class="metric"><div class="label">${t("unpaidInvoices")}</div><div class="value">${unpaid.length}</div></div>
     </div>
-    <h3>Последни документи</h3>
-    ${recent.length === 0 ? '<p class="muted">Все още няма създадени документи.</p>' : `
+    <h3>${t("recentDocuments")}</h3>
+    ${recent.length === 0 ? `<p class="muted">${t("noDocumentsYet")}</p>` : `
       <div class="table-scroll">
       <table class="data"><tbody>
-        ${recent.map(d => `<tr><td>${d.docType === "invoice" ? "Фактура" : d.docType === "offer" ? "Оферта" : "Кредитно"} № ${d.number} — ${esc(d.customerName || "—")}</td><td style="text-align:right">${money(d.total)}</td></tr>`).join("")}
+        ${recent.map(d => `<tr><td>${d.docType === "invoice" ? t("docInvoice") : d.docType === "offer" ? t("docOffer") : t("docCredit")} ${t("numberShort")} ${d.number} — ${esc(d.customerName || "—")}</td><td style="text-align:right">${money(d.total)}</td></tr>`).join("")}
       </tbody></table>
       </div>
     `}
@@ -819,7 +1149,7 @@ async function saveProduct() {
   let res;
   if (editingProduct.id) res = await supabaseClient.from("products").update(row).eq("id", editingProduct.id).select().single();
   else res = await supabaseClient.from("products").insert(row).select().single();
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   const idx = state.products.findIndex(p => p.id === res.data.id);
   if (idx >= 0) state.products[idx] = res.data; else state.products.push(res.data);
   state.products.sort((a, b) => a.name.localeCompare(b.name, "bg"));
@@ -827,9 +1157,9 @@ async function saveProduct() {
   cacheState(); flashSaved(true); render();
 }
 async function deleteProduct(id) {
-  if (!confirm("Изтриване на продукта?")) return;
+  if (!confirm(t("deleteProductConfirm"))) return;
   const res = await supabaseClient.from("products").delete().eq("id", id);
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.products = state.products.filter(p => p.id !== id);
   cacheState(); flashSaved(true); render();
 }
@@ -838,32 +1168,32 @@ function renderProducts() {
   const editForm = editingProduct ? `
     <div class="card">
       <div class="grid" style="grid-template-columns: 2fr 1fr 1fr 1fr 1fr;">
-        <div class="field-wrap ${productErrors.name ? 'has-error' : ''}"><label class="field">Име</label><input value="${esc(editingProduct.name)}" oninput="updateProductField('name', this.value)" placeholder="напр. Домати">${fieldError(productErrors, "name")}</div>
-        <div class="field-wrap"><label class="field">Категория</label><select onchange="updateProductField('category', this.value)">${CATEGORIES.map(c => `<option value="${c}" ${editingProduct.category === c ? "selected" : ""}>${c}</option>`).join("")}</select></div>
-        <div class="field-wrap"><label class="field">Мярка</label><select onchange="updateProductField('unit', this.value)">${UNITS.map(u => `<option value="${u}" ${editingProduct.unit === u ? "selected" : ""}>${u}</option>`).join("")}</select></div>
-        <div class="field-wrap ${productErrors.price ? 'has-error' : ''}"><label class="field">Цена (€)</label><input type="number" step="0.01" value="${esc(editingProduct.price)}" oninput="updateProductField('price', this.value)">${fieldError(productErrors, "price")}</div>
-        <div class="field-wrap ${productErrors.stock ? 'has-error' : ''}"><label class="field">Наличност</label><input type="number" step="0.01" value="${esc(editingProduct.stock)}" oninput="updateProductField('stock', this.value)">${fieldError(productErrors, "stock")}</div>
+        <div class="field-wrap ${productErrors.name ? 'has-error' : ''}"><label class="field">${t("name")}</label><input value="${esc(editingProduct.name)}" oninput="updateProductField('name', this.value)" placeholder="${t("productNamePlaceholder")}">${fieldError(productErrors, "name")}</div>
+        <div class="field-wrap"><label class="field">${t("category")}</label><select onchange="updateProductField('category', this.value)">${CATEGORIES.map(c => `<option value="${c}" ${editingProduct.category === c ? "selected" : ""}>${categoryLabel(c)}</option>`).join("")}</select></div>
+        <div class="field-wrap"><label class="field">${t("unit")}</label><select onchange="updateProductField('unit', this.value)">${UNITS.map(u => `<option value="${u}" ${editingProduct.unit === u ? "selected" : ""}>${unitLabel(u)}</option>`).join("")}</select></div>
+        <div class="field-wrap ${productErrors.price ? 'has-error' : ''}"><label class="field">${t("priceEur")}</label><input type="number" step="0.01" value="${esc(editingProduct.price)}" oninput="updateProductField('price', this.value)">${fieldError(productErrors, "price")}</div>
+        <div class="field-wrap ${productErrors.stock ? 'has-error' : ''}"><label class="field">${t("stock")}</label><input type="number" step="0.01" value="${esc(editingProduct.stock)}" oninput="updateProductField('stock', this.value)">${fieldError(productErrors, "stock")}</div>
       </div>
-      <div class="savebar"><button class="primary" onclick="saveProduct()">Запази</button><button onclick="cancelProductEdit()">Отказ</button></div>
+      <div class="savebar"><button class="primary" onclick="saveProduct()">${t("save")}</button><button onclick="cancelProductEdit()">${t("cancel")}</button></div>
     </div>
   ` : "";
   const shown = state.products.filter(p => matchesSearch([p.name, p.category, p.unit], productSearch));
   return `
-    <div class="row"><h2>Продукти</h2><button class="primary" ${offline ? "disabled" : ""} onclick="newProduct()">+ Нов продукт</button></div>
+    <div class="row"><h2>${t("navProducts")}</h2><button class="primary" ${offline ? "disabled" : ""} onclick="newProduct()">${t("newProduct")}</button></div>
     ${editForm}
-    ${renderSearchBox("product", productSearch, "Търсене по име или категория…", shown.length, state.products.length)}
+    ${renderSearchBox("product", productSearch, t("searchProducts"), shown.length, state.products.length)}
     <div class="table-scroll">
     <table class="data mobile-cards">
-      <thead><tr><th>Име</th><th>Категория</th><th>Мярка</th><th>Цена</th><th>Наличност</th><th></th></tr></thead>
+      <thead><tr><th>${t("name")}</th><th>${t("category")}</th><th>${t("unit")}</th><th>${t("price")}</th><th>${t("stock")}</th><th></th></tr></thead>
       <tbody>
-        ${shown.length === 0 ? `<tr><td colspan="6" class="muted">${state.products.length === 0 ? "Няма добавени продукти." : "Няма продукти, отговарящи на търсенето."}</td></tr>` : shown.map(p => `
+        ${shown.length === 0 ? `<tr><td colspan="6" class="muted">${state.products.length === 0 ? t("noProducts") : t("noProductsMatch")}</td></tr>` : shown.map(p => `
           <tr>
-            <td data-label="Име">${esc(p.name)}</td>
-            <td class="muted" data-label="Категория">${esc(p.category)}</td>
-            <td class="muted" data-label="Мярка">${esc(p.unit)}</td>
-            <td data-label="Цена">${money(p.price)}</td>
-            <td data-label="Наличност" class="${p.stock !== null && p.stock !== "" && Number(p.stock) <= 5 ? "badge-low" : "muted"}">${p.stock !== null && p.stock !== "" ? esc(p.stock) : "—"}</td>
-            <td class="actions-cell"><button ${offline ? "disabled" : ""} onclick="editProduct('${p.id}')">Редакция</button><button ${offline ? "disabled" : ""} onclick="deleteProduct('${p.id}')">Изтрий</button></td>
+            <td data-label="${t("name")}">${esc(p.name)}</td>
+            <td class="muted" data-label="${t("category")}">${esc(categoryLabel(p.category))}</td>
+            <td class="muted" data-label="${t("unit")}">${esc(unitLabel(p.unit))}</td>
+            <td data-label="${t("price")}">${money(p.price)}</td>
+            <td data-label="${t("stock")}" class="${p.stock !== null && p.stock !== "" && Number(p.stock) <= 5 ? "badge-low" : "muted"}">${p.stock !== null && p.stock !== "" ? esc(p.stock) : "—"}</td>
+            <td class="actions-cell"><button ${offline ? "disabled" : ""} onclick="editProduct('${p.id}')">${t("edit")}</button><button ${offline ? "disabled" : ""} onclick="deleteProduct('${p.id}')">${t("del")}</button></td>
           </tr>
         `).join("")}
       </tbody>
@@ -884,7 +1214,7 @@ async function saveCustomer() {
   let res;
   if (editingCustomer.id) res = await supabaseClient.from("customers").update(row).eq("id", editingCustomer.id).select().single();
   else res = await supabaseClient.from("customers").insert(row).select().single();
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   const obj = customerRowToObj(res.data);
   const idx = state.customers.findIndex(c => c.id === obj.id);
   if (idx >= 0) state.customers[idx] = obj; else state.customers.push(obj);
@@ -893,9 +1223,9 @@ async function saveCustomer() {
   cacheState(); flashSaved(true); render();
 }
 async function deleteCustomer(id) {
-  if (!confirm("Изтриване на клиента?")) return;
+  if (!confirm(t("deleteCustomerConfirm"))) return;
   const res = await supabaseClient.from("customers").delete().eq("id", id);
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.customers = state.customers.filter(c => c.id !== id);
   if (viewingCustomerId === id) viewingCustomerId = null;
   cacheState(); flashSaved(true); render();
@@ -905,8 +1235,8 @@ function closeCustomerDetails() { viewingCustomerId = null; render(); }
 
 function renderCustomerDetailsModal(c) {
   const rows = [
-    ["Име / Фирма", c.name], ["ЕИК", c.eik || "—"], ["ДДС номер", c.vatNumber || "—"],
-    ["Адрес", c.address || "—"], ["Телефон", c.phone || "—"], ["Имейл", c.email || "—"]
+    [t("nameCompany"), c.name], [t("eik"), c.eik || "—"], [t("vatNumber"), c.vatNumber || "—"],
+    [t("address"), c.address || "—"], [t("phone"), c.phone || "—"], [t("email"), c.email || "—"]
   ];
   return `
     <div class="modal-overlay no-print" onclick="if (event.target === this) closeCustomerDetails()">
@@ -914,8 +1244,8 @@ function renderCustomerDetailsModal(c) {
         <div class="row" style="margin-bottom: 0.5rem;"><h3 style="margin:0;">${esc(c.name)}</h3><button onclick="closeCustomerDetails()">×</button></div>
         ${rows.map(([label, val]) => `<div class="detail-row"><span class="label">${label}</span><span>${esc(val)}</span></div>`).join("")}
         <div class="savebar">
-          <button class="primary" ${offline ? "disabled" : ""} onclick="closeCustomerDetails(); editCustomer('${c.id}')">Редакция</button>
-          <button onclick="closeCustomerDetails()">Затвори</button>
+          <button class="primary" ${offline ? "disabled" : ""} onclick="closeCustomerDetails(); editCustomer('${c.id}')">${t("edit")}</button>
+          <button onclick="closeCustomerDetails()">${t("close")}</button>
         </div>
       </div>
     </div>
@@ -927,32 +1257,32 @@ function renderCustomers() {
   const editForm = editingCustomer ? `
     <div class="card">
       <div class="grid" style="grid-template-columns: 1fr 1fr 1fr;">
-        <div class="field-wrap ${err.name ? 'has-error' : ''}"><label class="field">Име / Фирма</label><input value="${esc(editingCustomer.name)}" oninput="updateCustomerField('name', this.value)" placeholder="напр. Ресторант Витоша ЕООД">${fieldError(err, "name")}</div>
-        <div class="field-wrap ${err.eik ? 'has-error' : ''}"><label class="field">ЕИК</label><input value="${esc(editingCustomer.eik)}" oninput="updateCustomerField('eik', this.value)">${fieldError(err, "eik")}</div>
-        <div class="field-wrap ${err.vatNumber ? 'has-error' : ''}"><label class="field">ДДС номер</label><input value="${esc(editingCustomer.vatNumber)}" oninput="updateCustomerField('vatNumber', this.value)" placeholder="BG123456789">${fieldError(err, "vatNumber")}</div>
-        <div class="field-wrap"><label class="field">Адрес</label><input value="${esc(editingCustomer.address)}" oninput="updateCustomerField('address', this.value)"></div>
-        <div class="field-wrap ${err.phone ? 'has-error' : ''}"><label class="field">Телефон</label><input value="${esc(editingCustomer.phone)}" oninput="updateCustomerField('phone', this.value)">${fieldError(err, "phone")}</div>
-        <div class="field-wrap ${err.email ? 'has-error' : ''}"><label class="field">Имейл</label><input value="${esc(editingCustomer.email)}" oninput="updateCustomerField('email', this.value)">${fieldError(err, "email")}</div>
+        <div class="field-wrap ${err.name ? 'has-error' : ''}"><label class="field">${t("nameCompany")}</label><input value="${esc(editingCustomer.name)}" oninput="updateCustomerField('name', this.value)" placeholder="${t("customerNamePlaceholder")}">${fieldError(err, "name")}</div>
+        <div class="field-wrap ${err.eik ? 'has-error' : ''}"><label class="field">${t("eik")}</label><input value="${esc(editingCustomer.eik)}" oninput="updateCustomerField('eik', this.value)">${fieldError(err, "eik")}</div>
+        <div class="field-wrap ${err.vatNumber ? 'has-error' : ''}"><label class="field">${t("vatNumber")}</label><input value="${esc(editingCustomer.vatNumber)}" oninput="updateCustomerField('vatNumber', this.value)" placeholder="BG123456789">${fieldError(err, "vatNumber")}</div>
+        <div class="field-wrap"><label class="field">${t("address")}</label><input value="${esc(editingCustomer.address)}" oninput="updateCustomerField('address', this.value)"></div>
+        <div class="field-wrap ${err.phone ? 'has-error' : ''}"><label class="field">${t("phone")}</label><input value="${esc(editingCustomer.phone)}" oninput="updateCustomerField('phone', this.value)">${fieldError(err, "phone")}</div>
+        <div class="field-wrap ${err.email ? 'has-error' : ''}"><label class="field">${t("email")}</label><input value="${esc(editingCustomer.email)}" oninput="updateCustomerField('email', this.value)">${fieldError(err, "email")}</div>
       </div>
-      <div class="savebar"><button class="primary" onclick="saveCustomer()">Запази</button><button onclick="cancelCustomerEdit()">Отказ</button></div>
+      <div class="savebar"><button class="primary" onclick="saveCustomer()">${t("save")}</button><button onclick="cancelCustomerEdit()">${t("cancel")}</button></div>
     </div>
   ` : "";
   const viewingCustomer = viewingCustomerId ? state.customers.find(c => c.id === viewingCustomerId) : null;
   const shown = state.customers.filter(c => matchesSearch([c.name, c.eik, c.vatNumber, c.phone, c.email], customerSearch));
   return `
-    <div class="row"><h2>Клиенти</h2><button class="primary" ${offline ? "disabled" : ""} onclick="newCustomer()">+ Нов клиент</button></div>
+    <div class="row"><h2>${t("navCustomers")}</h2><button class="primary" ${offline ? "disabled" : ""} onclick="newCustomer()">${t("newCustomer")}</button></div>
     ${editForm}
-    ${renderSearchBox("customer", customerSearch, "Търсене по име, ЕИК или телефон…", shown.length, state.customers.length)}
+    ${renderSearchBox("customer", customerSearch, t("searchCustomers"), shown.length, state.customers.length)}
     <div class="table-scroll">
     <table class="data mobile-cards">
       <tbody>
-        ${shown.length === 0 ? `<tr><td class="muted">${state.customers.length === 0 ? "Няма добавени клиенти." : "Няма клиенти, отговарящи на търсенето."}</td></tr>` : shown.map(c => `
+        ${shown.length === 0 ? `<tr><td class="muted">${state.customers.length === 0 ? t("noCustomers") : t("noCustomersMatch")}</td></tr>` : shown.map(c => `
           <tr>
-            <td style="text-align:left;"><div>${esc(c.name)}</div><div class="muted" style="font-size:12px;">${c.eik ? "ЕИК: " + esc(c.eik) + " " : ""}${esc(c.phone || "")}</div></td>
+            <td style="text-align:left;"><div>${esc(c.name)}</div><div class="muted" style="font-size:12px;">${c.eik ? t("eik") + ": " + esc(c.eik) + " " : ""}${esc(c.phone || "")}</div></td>
             <td class="actions-cell">
-              <button onclick="viewCustomerDetails('${c.id}')">Детайли</button>
-              <button ${offline ? "disabled" : ""} onclick="editCustomer('${c.id}')">Редакция</button>
-              <button ${offline ? "disabled" : ""} onclick="deleteCustomer('${c.id}')">Изтрий</button>
+              <button onclick="viewCustomerDetails('${c.id}')">${t("details")}</button>
+              <button ${offline ? "disabled" : ""} onclick="editCustomer('${c.id}')">${t("edit")}</button>
+              <button ${offline ? "disabled" : ""} onclick="deleteCustomer('${c.id}')">${t("del")}</button>
             </td>
           </tr>
         `).join("")}
@@ -976,10 +1306,10 @@ function newDoc(docType) {
 function editDoc(id) {
   const d = state.documents.find(x => x.id === id);
   if (!d) return;
-  if (d.docType === "credit") { alert("Кредитните известия не се редактират. Изтрийте го и издайте ново."); return; }
+  if (d.docType === "credit") { alert(t("creditNotEditable")); return; }
   if (d.docType === "invoice") {
     const credits = state.documents.filter(x => x.docType === "credit" && x.relatedInvoiceNumber === d.number);
-    if (credits.length && !confirm(`Към фактура № ${d.number} има издадено кредитно известие. Промяната тук няма да преизчисли кредитното. Да продължим ли?`)) return;
+    if (credits.length && !confirm(t("editWithCreditWarn", { n: d.number }))) return;
   }
   docForm = {
     editingId: d.id, number: d.number, docType: d.docType, date: d.date,
@@ -1013,12 +1343,12 @@ function computeDocTotals() {
   return { subtotal, vatAmount, total: subtotal + vatAmount };
 }
 function renderDocFormTotalsOnly() {
-  const t = computeDocTotals();
+  const tot = computeDocTotals();
   const el = document.getElementById("doc-totals");
   if (el) el.innerHTML = `
-    <div>Данъчна основа: ${money(t.subtotal)}</div>
-    <div>ДДС (${docForm.vatRate}%): ${money(t.vatAmount)}</div>
-    <div style="font-weight:600;">Общо: ${money(t.total)}</div>
+    <div>${t("taxBase")}: ${money(tot.subtotal)}</div>
+    <div>${t("vatLabel")} (${docForm.vatRate}%): ${money(tot.vatAmount)}</div>
+    <div style="font-weight:600;">${t("total")}: ${money(tot.total)}</div>
   `;
 }
 
@@ -1034,15 +1364,15 @@ async function applyStockAdjustments(items) {
 }
 
 async function saveDoc() {
-  if (docForm.items.every(it => !it.name)) { alert("Добавете поне един продукт."); return; }
+  if (docForm.items.every(it => !it.name)) { alert(t("addAtLeastOneProduct")); return; }
   const customer = state.customers.find(c => c.id === docForm.customerId);
-  const t = computeDocTotals();
+  const tot = computeDocTotals();
 
   const fields = {
     date: docForm.date, customer_id: docForm.customerId || null,
-    customer_name: customer ? customer.name : (docForm.customerName || "Без данни"),
+    customer_name: customer ? customer.name : (docForm.customerName || ""),
     customer_snapshot: customer || null, items: docForm.items,
-    vat_rate: docForm.vatRate, subtotal: t.subtotal, vat_amount: t.vatAmount, total: t.total,
+    vat_rate: docForm.vatRate, subtotal: tot.subtotal, vat_amount: tot.vatAmount, total: tot.total,
     paid: !!docForm.paid, payment_method: docForm.paymentMethod || "cash"
   };
 
@@ -1053,7 +1383,7 @@ async function saveDoc() {
     const originalItems = original ? original.items.map(it => ({ ...it })) : [];
     const wasInvoice = original && original.docType === "invoice";
     const res = await supabaseClient.from("documents").update(fields).eq("id", docForm.editingId).select().single();
-    if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+    if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
     const updated = docRowToObj(res.data);
     const idx = state.documents.findIndex(x => x.id === updated.id);
     if (idx >= 0) state.documents[idx] = updated;
@@ -1063,16 +1393,16 @@ async function saveDoc() {
       await applyStockAdjustments(originalItems.map(it => ({ ...it, qty: -Number(it.qty) })));
       await applyStockAdjustments(updated.items);
     }
-    alert(`Документ № ${updated.number} е обновен.`);
+    alert(t("docUpdated", { n: updated.number }));
     return;
   }
 
   const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: docForm.docType });
-  if (numErr) { flashSaved(false, "Грешка при номериране: " + numErr.message); return; }
+  if (numErr) { flashSaved(false, t("numberingError") + numErr.message); return; }
 
   const row = { owner_id: session.user.id, doc_type: docForm.docType, number, ...fields };
   const res = await supabaseClient.from("documents").insert(row).select().single();
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.documents.push(docRowToObj(res.data));
   docForm = null;
   cacheState(); flashSaved(true); render();
@@ -1083,9 +1413,9 @@ async function saveDoc() {
 
 async function convertToInvoice(id) {
   const offerDoc = state.documents.find(d => d.id === id);
-  if (!confirm(`Превръщане на оферта № ${offerDoc.number} (${money(offerDoc.total)}) във фактура?`)) return;
+  if (!confirm(t("convertConfirm", { n: offerDoc.number, sum: money(offerDoc.total) }))) return;
   const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: "invoice" });
-  if (numErr) { flashSaved(false, "Грешка: " + numErr.message); return; }
+  if (numErr) { flashSaved(false, t("errorPrefix") + numErr.message); return; }
   const row = {
     owner_id: session.user.id, doc_type: "invoice", number, date: todayStr(),
     customer_id: offerDoc.customerId, customer_name: offerDoc.customerName, customer_snapshot: offerDoc.customerSnapshot,
@@ -1093,12 +1423,12 @@ async function convertToInvoice(id) {
     total: offerDoc.total, paid: false, converted_from_offer_id: offerDoc.id, payment_method: offerDoc.paymentMethod || "cash"
   };
   const res = await supabaseClient.from("documents").insert(row).select().single();
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.documents.push(docRowToObj(res.data));
   cacheState(); flashSaved(true); render();
   await applyStockAdjustments(row.items);
   await refetchTable("settings");
-  alert(`Издадена фактура № ${number} от оферта № ${offerDoc.number}.`);
+  alert(t("convertedAlert", { n: number, from: offerDoc.number }));
 }
 
 // A credit note defaults to crediting every line at its full sold quantity
@@ -1126,52 +1456,52 @@ function computeCreditTotals() {
   return { subtotal, vatAmount, total: subtotal + vatAmount, selected };
 }
 function renderCreditFormTotalsOnly() {
-  const t = computeCreditTotals();
+  const tot = computeCreditTotals();
   const el = document.getElementById("credit-totals");
   if (el) el.innerHTML = `
-    <div>Данъчна основа: ${money(t.subtotal)}</div>
-    <div>ДДС: ${money(t.vatAmount)}</div>
-    <div style="font-weight:600;">Общо: ${money(t.total)}</div>
+    <div>${t("taxBase")}: ${money(tot.subtotal)}</div>
+    <div>${t("vatLabel")}: ${money(tot.vatAmount)}</div>
+    <div style="font-weight:600;">${t("total")}: ${money(tot.total)}</div>
   `;
 }
 async function saveCreditNote() {
   const invoice = state.documents.find(d => d.id === creditForm.invoiceId);
   for (const it of creditForm.items) {
-    if (!isValidMoney(it.creditQty)) { creditFormError = `Невалидно количество за „${it.name}“.`; render(); return; }
-    if (Number(it.creditQty) > Number(it.qty) + 1e-9) { creditFormError = `Количеството за „${it.name}“ не може да е повече от продаденото (${it.qty}).`; render(); return; }
+    if (!isValidMoney(it.creditQty)) { creditFormError = t("invalidQtyFor", { name: it.name }); render(); return; }
+    if (Number(it.creditQty) > Number(it.qty) + 1e-9) { creditFormError = t("qtyExceedsSold", { name: it.name, qty: it.qty }); render(); return; }
   }
-  const t = computeCreditTotals();
-  if (t.selected.length === 0) { creditFormError = "Изберете количество поне за един продукт."; render(); return; }
+  const tot = computeCreditTotals();
+  if (tot.selected.length === 0) { creditFormError = t("selectAtLeastOneQty"); render(); return; }
   creditFormError = "";
-  if (!confirm(`Издаване на кредитно известие за ${t.selected.length} артикул(а) на стойност ${money(t.total)} към фактура № ${invoice.number}?`)) return;
+  if (!confirm(t("creditConfirm", { n: tot.selected.length, sum: money(tot.total), inv: invoice.number }))) return;
 
   const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: "credit" });
-  if (numErr) { flashSaved(false, "Грешка: " + numErr.message); return; }
-  const items = t.selected.map(it => ({ id: it.id, productId: it.productId, name: it.name, unit: it.unit, price: it.price, qty: -Math.abs(Number(it.creditQty)) }));
+  if (numErr) { flashSaved(false, t("errorPrefix") + numErr.message); return; }
+  const items = tot.selected.map(it => ({ id: it.id, productId: it.productId, name: it.name, unit: it.unit, price: it.price, qty: -Math.abs(Number(it.creditQty)) }));
   const row = {
     owner_id: session.user.id, doc_type: "credit", number, date: todayStr(),
     customer_id: invoice.customerId, customer_name: invoice.customerName, customer_snapshot: invoice.customerSnapshot,
-    items, vat_rate: invoice.vatRate, subtotal: -t.subtotal, vat_amount: -t.vatAmount, total: -t.total,
+    items, vat_rate: invoice.vatRate, subtotal: -tot.subtotal, vat_amount: -tot.vatAmount, total: -tot.total,
     paid: false, related_invoice_number: invoice.number, payment_method: invoice.paymentMethod || "cash"
   };
   const res = await supabaseClient.from("documents").insert(row).select().single();
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.documents.push(docRowToObj(res.data));
   creditForm = null;
   cacheState(); flashSaved(true); render();
   await applyStockAdjustments(items);
   await refetchTable("settings");
-  alert(`Издадено кредитно известие № ${number} към фактура № ${invoice.number}.`);
+  alert(t("creditIssued", { n: number, inv: invoice.number }));
 }
 
 async function deleteDocument(id) {
   const d = state.documents.find(x => x.id === id);
   if (!d) return;
-  const typeLabel = d.docType === "invoice" ? "фактура" : d.docType === "offer" ? "оферта" : "кредитно известие";
-  const stockNote = d.docType !== "offer" ? " Наличностите на засегнатите продукти ще бъдат коригирани обратно." : "";
-  if (!confirm(`Изтриване на ${typeLabel} № ${d.number} (${money(d.total)})? Номерът няма да бъде преизползван.${stockNote}`)) return;
+  const typeLabel = d.docType === "invoice" ? t("typeInvoiceGen") : d.docType === "offer" ? t("typeOfferGen") : t("typeCreditGen");
+  const stockNote = d.docType !== "offer" ? t("stockWillRevert") : "";
+  if (!confirm(t("deleteDocConfirm", { type: typeLabel, n: d.number, sum: money(d.total), stock: stockNote }))) return;
   const res = await supabaseClient.from("documents").delete().eq("id", id);
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.documents = state.documents.filter(x => x.id !== id);
   cacheState(); flashSaved(true); render();
   if (d.docType !== "offer") {
@@ -1183,7 +1513,7 @@ async function deleteDocument(id) {
 async function togglePaid(id) {
   const d = state.documents.find(d => d.id === id);
   const res = await supabaseClient.from("documents").update({ paid: !d.paid }).eq("id", id).select().single();
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   d.paid = res.data.paid;
   cacheState(); flashSaved(true); render();
 }
@@ -1192,8 +1522,9 @@ function backFromPrint() { printingDocId = null; render(); }
 
 function exportDocsCSV(docType) {
   const list = state.documents.filter(d => d.docType === docType);
-  const header = ["Номер", "Дата", "Клиент", "Данъчна основа", "ДДС", "Общо", "Платена"];
-  const rows = list.map(d => [d.number, d.date, d.customerName, d.subtotal.toFixed(2), d.vatAmount.toFixed(2), d.total.toFixed(2), d.paid ? "да" : "не"]);
+  const header = [t("numberShort"), t("date"), t("client"), t("taxBase"), t("vatLabel"), t("total"), t("paidPill")];
+  const yes = lang === "en" ? "yes" : "да", no = lang === "en" ? "no" : "не";
+  const rows = list.map(d => [d.number, d.date, d.customerName, d.subtotal.toFixed(2), d.vatAmount.toFixed(2), d.total.toFixed(2), d.paid ? yes : no]);
   const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
   downloadBlob("﻿" + csv, "text/csv;charset=utf-8;", `${docType === "invoice" ? "fakturi" : "oferti"}_${todayStr()}.csv`);
 }
@@ -1212,44 +1543,44 @@ function renderDocuments(docType, title) {
   const all = docType === "invoice"
     ? state.documents.filter(d => d.docType === "invoice" || d.docType === "credit")
     : state.documents.filter(d => d.docType === docType);
-  const list = all.filter(d => matchesSearch([String(d.number), d.customerName, d.date, PAYMENT_METHODS[d.paymentMethod]], docSearch));
+  const list = all.filter(d => matchesSearch([String(d.number), d.customerName, d.date, paymentLabel(d.paymentMethod)], docSearch));
   const formHtml = docForm && docForm.docType === docType ? renderDocForm() : "";
   const creditFormHtml = docType === "invoice" && creditForm ? renderCreditForm() : "";
   return `
     <div class="row">
       <h2>${title}</h2>
       <div style="display:flex; gap:8px;">
-        <button onclick="exportDocsCSV('${docType}')">Excel / CSV</button>
-        <button class="primary" ${offline ? "disabled" : ""} onclick="newDoc('${docType}')">+ ${docType === "invoice" ? "Нова фактура" : "Нова оферта"}</button>
+        <button onclick="exportDocsCSV('${docType}')">${t("excelCsv")}</button>
+        <button class="primary" ${offline ? "disabled" : ""} onclick="newDoc('${docType}')">${docType === "invoice" ? t("newInvoice") : t("newOffer")}</button>
       </div>
     </div>
     ${formHtml}
     ${creditFormHtml}
-    ${renderSearchBox("doc", docSearch, "Търсене по номер, клиент или дата…", list.length, all.length)}
+    ${renderSearchBox("doc", docSearch, t("searchDocs"), list.length, all.length)}
     <div class="table-scroll">
     <table class="data mobile-cards">
-      <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Общо</th>${docType === "invoice" ? "<th>Плащане</th>" : ""}<th>Статус</th><th></th></tr></thead>
+      <thead><tr><th>${t("numberShort")}</th><th>${t("date")}</th><th>${t("client")}</th><th>${t("total")}</th>${docType === "invoice" ? `<th>${t("payment")}</th>` : ""}<th>${t("status")}</th><th></th></tr></thead>
       <tbody>
-        ${list.length === 0 ? `<tr><td colspan="${docType === "invoice" ? 7 : 6}" class="muted">${all.length === 0 ? "Няма създадени документи." : "Няма документи, отговарящи на търсенето."}</td></tr>` : list.slice().reverse().map(d => {
+        ${list.length === 0 ? `<tr><td colspan="${docType === "invoice" ? 7 : 6}" class="muted">${all.length === 0 ? t("noDocuments") : t("noDocumentsMatch")}</td></tr>` : list.slice().reverse().map(d => {
           const isCredit = d.docType === "credit";
           return `
           <tr>
-            <td data-label="№">${isCredit ? `<span class="badge-low">КИ № ${d.number}</span>` : d.number}</td>
-            <td data-label="Дата">${d.date}</td>
-            <td data-label="Клиент">${esc(d.customerName)}</td>
-            <td data-label="Общо" class="${isCredit ? "badge-low" : ""}">${money(d.total)}</td>
-            ${docType === "invoice" ? `<td class="muted" data-label="Плащане">${PAYMENT_METHODS[d.paymentMethod] || "В брой"}</td>` : ""}
-            <td data-label="Статус">${
-              isCredit ? `<span class="muted">към № ${d.relatedInvoiceNumber}</span>`
-              : docType === "invoice" ? `<button class="pill ${d.paid ? "paid" : "unpaid"}" ${offline ? "disabled" : ""} onclick="togglePaid('${d.id}')">${d.paid ? "Платена" : "Чака"}</button>`
+            <td data-label="${t("numberShort")}">${isCredit ? `<span class="badge-low">${t("creditPrefix", { n: d.number })}</span>` : d.number}</td>
+            <td data-label="${t("date")}">${d.date}</td>
+            <td data-label="${t("client")}">${esc(d.customerName) || "—"}</td>
+            <td data-label="${t("total")}" class="${isCredit ? "badge-low" : ""}">${money(d.total)}</td>
+            ${docType === "invoice" ? `<td class="muted" data-label="${t("payment")}">${paymentLabel(d.paymentMethod)}</td>` : ""}
+            <td data-label="${t("status")}">${
+              isCredit ? `<span class="muted">${t("towardsNo", { n: d.relatedInvoiceNumber })}</span>`
+              : docType === "invoice" ? `<button class="pill ${d.paid ? "paid" : "unpaid"}" ${offline ? "disabled" : ""} onclick="togglePaid('${d.id}')">${d.paid ? t("paidPill") : t("waitingPill")}</button>`
               : "—"
             }</td>
             <td class="actions-cell">
-              <button onclick="viewDoc('${d.id}')">Преглед / Печат</button>
-              ${!isCredit ? `<button ${offline ? "disabled" : ""} onclick="editDoc('${d.id}')">Редакция</button>` : ""}
-              ${docType === "offer" ? `<button ${offline ? "disabled" : ""} onclick="convertToInvoice('${d.id}')">Във фактура</button>` : ""}
-              ${docType === "invoice" && !isCredit ? `<button ${offline ? "disabled" : ""} onclick="beginCreditNote('${d.id}')">Кредитно</button>` : ""}
-              <button class="danger" ${offline ? "disabled" : ""} onclick="deleteDocument('${d.id}')">Изтрий</button>
+              <button onclick="viewDoc('${d.id}')">${t("viewPrint")}</button>
+              ${!isCredit ? `<button ${offline ? "disabled" : ""} onclick="editDoc('${d.id}')">${t("edit")}</button>` : ""}
+              ${docType === "offer" ? `<button ${offline ? "disabled" : ""} onclick="convertToInvoice('${d.id}')">${t("toInvoice")}</button>` : ""}
+              ${docType === "invoice" && !isCredit ? `<button ${offline ? "disabled" : ""} onclick="beginCreditNote('${d.id}')">${t("creditNoteBtn")}</button>` : ""}
+              <button class="danger" ${offline ? "disabled" : ""} onclick="deleteDocument('${d.id}')">${t("del")}</button>
             </td>
           </tr>
         `; }).join("")}
@@ -1260,52 +1591,52 @@ function renderDocuments(docType, title) {
 }
 
 function renderDocForm() {
-  const t = computeDocTotals();
-  const typeLabel = docForm.docType === "invoice" ? "фактура" : "оферта";
+  const tot = computeDocTotals();
+  const typeLabel = docForm.docType === "invoice" ? t("typeInvoice") : t("typeOffer");
   return `
     <div class="card">
-      ${docForm.editingId ? `<h3 style="margin-top:0;">Редакция на ${typeLabel} № ${docForm.number}</h3><p class="muted" style="font-size:13px;">Номерът остава същият. Наличностите се преизчисляват спрямо промените.</p>` : ""}
+      ${docForm.editingId ? `<h3 style="margin-top:0;">${t("editDocTitle", { type: typeLabel, n: docForm.number })}</h3><p class="muted" style="font-size:13px;">${t("editDocHelp")}</p>` : ""}
       <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom:6px;">
-        <div class="field-wrap"><label class="field">Дата</label><input type="date" value="${docForm.date}" oninput="updateDocField('date', this.value)"></div>
-        <div class="field-wrap"><label class="field">Клиент</label>
+        <div class="field-wrap"><label class="field">${t("date")}</label><input type="date" value="${docForm.date}" oninput="updateDocField('date', this.value)"></div>
+        <div class="field-wrap"><label class="field">${t("client")}</label>
           <select onchange="updateDocField('customerId', this.value)">
-            <option value="">Без регистриран клиент</option>
+            <option value="">${t("noRegisteredCustomer")}</option>
             ${state.customers.map(c => `<option value="${c.id}" ${docForm.customerId === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
           </select>
         </div>
-        <div class="field-wrap"><label class="field">ДДС ставка</label>
+        <div class="field-wrap"><label class="field">${t("vatRate")}</label>
           <select onchange="updateDocField('vatRate', this.value)">
             ${VAT_RATES.map(r => `<option value="${r}" ${docForm.vatRate === r ? "selected" : ""}>${r}%</option>`).join("")}
           </select>
         </div>
         ${docForm.docType === "invoice" ? `
-          <div class="field-wrap"><label class="field">Начин на плащане</label>
+          <div class="field-wrap"><label class="field">${t("paymentMethod")}</label>
             <select onchange="updateDocField('paymentMethod', this.value)">
-              ${Object.entries(PAYMENT_METHODS).map(([k, label]) => `<option value="${k}" ${docForm.paymentMethod === k ? "selected" : ""}>${label}</option>`).join("")}
+              ${PAYMENT_METHOD_KEYS.map(k => `<option value="${k}" ${docForm.paymentMethod === k ? "selected" : ""}>${paymentLabel(k)}</option>`).join("")}
             </select>
           </div>
         ` : ""}
       </div>
-      <div class="item-row" style="font-size:12px; color: var(--text-muted);"><span>Продукт</span><span>Мярка</span><span>Кол-во</span><span>Цена</span><span></span></div>
+      <div class="item-row" style="font-size:12px; color: var(--text-muted);"><span>${t("product")}</span><span>${t("unit")}</span><span>${t("qty")}</span><span>${t("price")}</span><span></span></div>
       ${docForm.items.map((it, idx) => `
         <div class="item-row">
           <select onchange="pickProduct(${idx}, this.value)">
-            <option value="">— избери продукт —</option>
+            <option value="">${t("chooseProduct")}</option>
             ${state.products.map(p => `<option value="${p.id}" ${it.productId === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
           </select>
-          <input id="item-unit-${idx}" value="${esc(it.unit)}" oninput="updateItemField(${idx}, 'unit', this.value)" placeholder="мярка">
+          <input id="item-unit-${idx}" value="${esc(it.unit)}" oninput="updateItemField(${idx}, 'unit', this.value)" placeholder="${t('unitPlaceholder')}">
           <input id="item-qty-${idx}" type="number" step="0.01" value="${esc(it.qty)}" oninput="updateItemField(${idx}, 'qty', this.value)">
           <input id="item-price-${idx}" type="number" step="0.01" value="${esc(it.price)}" oninput="updateItemField(${idx}, 'price', this.value)">
-          <button onclick="removeDocItem(${idx})" title="Премахни">×</button>
+          <button onclick="removeDocItem(${idx})" title="${t('removeTitle')}">×</button>
         </div>
       `).join("")}
-      <button onclick="addDocItem()" style="margin: 6px 0 12px;">+ Добави ред</button>
+      <button onclick="addDocItem()" style="margin: 6px 0 12px;">${t("addRow")}</button>
       <div id="doc-totals" style="text-align:right; margin-bottom: 10px;">
-        <div>Данъчна основа: ${money(t.subtotal)}</div>
-        <div>ДДС (${docForm.vatRate}%): ${money(t.vatAmount)}</div>
-        <div style="font-weight:600;">Общо: ${money(t.total)}</div>
+        <div>${t("taxBase")}: ${money(tot.subtotal)}</div>
+        <div>${t("vatLabel")} (${docForm.vatRate}%): ${money(tot.vatAmount)}</div>
+        <div style="font-weight:600;">${t("total")}: ${money(tot.total)}</div>
       </div>
-      <div class="savebar"><button class="primary" onclick="saveDoc()">${docForm.editingId ? "Запази промените" : "Запази"}</button><button onclick="cancelDocForm()">Отказ</button></div>
+      <div class="savebar"><button class="primary" onclick="saveDoc()">${docForm.editingId ? t("saveChanges") : t("save")}</button><button onclick="cancelDocForm()">${t("cancel")}</button></div>
     </div>
   `;
 }
@@ -1313,75 +1644,75 @@ function renderDocForm() {
 function renderCreditForm() {
   const invoice = state.documents.find(d => d.id === creditForm.invoiceId);
   if (!invoice) { creditForm = null; return ""; }
-  const t = computeCreditTotals();
+  const tot = computeCreditTotals();
   return `
     <div class="card">
-      <h3 style="margin-top:0;">Кредитно известие към фактура № ${invoice.number}</h3>
-      <p class="muted" style="font-size:13px;">По подразбиране са зададени продадените количества — намалете или занулете редовете, които не се връщат.</p>
+      <h3 style="margin-top:0;">${t("creditFormTitle", { n: invoice.number })}</h3>
+      <p class="muted" style="font-size:13px;">${t("creditFormHelp")}</p>
       ${creditFormError ? `<div class="error-box">${esc(creditFormError)}</div>` : ""}
       <div class="item-row" style="grid-template-columns: 2fr 1fr 1fr 1fr; font-size:12px; color: var(--text-muted);">
-        <span>Продукт</span><span>Продадено</span><span>За кредитиране</span><span>Цена</span>
+        <span>${t("product")}</span><span>${t("sold")}</span><span>${t("toCredit")}</span><span>${t("price")}</span>
       </div>
       ${creditForm.items.map((it, idx) => `
         <div class="item-row" style="grid-template-columns: 2fr 1fr 1fr 1fr;">
           <span>${esc(it.name)}</span>
-          <span class="muted">${it.qty} ${esc(it.unit)}</span>
+          <span class="muted">${it.qty} ${esc(unitLabel(it.unit))}</span>
           <input type="number" step="0.01" min="0" max="${it.qty}" value="${esc(it.creditQty)}" oninput="updateCreditQty(${idx}, this.value)">
           <span class="muted">${money(it.price)}</span>
         </div>
       `).join("")}
       <div id="credit-totals" style="text-align:right; margin: 10px 0;">
-        <div>Данъчна основа: ${money(t.subtotal)}</div>
-        <div>ДДС: ${money(t.vatAmount)}</div>
-        <div style="font-weight:600;">Общо: ${money(t.total)}</div>
+        <div>${t("taxBase")}: ${money(tot.subtotal)}</div>
+        <div>${t("vatLabel")}: ${money(tot.vatAmount)}</div>
+        <div style="font-weight:600;">${t("total")}: ${money(tot.total)}</div>
       </div>
-      <div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveCreditNote()">Издай кредитно известие</button><button onclick="cancelCreditForm()">Отказ</button></div>
+      <div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveCreditNote()">${t("issueCreditNote")}</button><button onclick="cancelCreditForm()">${t("cancel")}</button></div>
     </div>
   `;
 }
 
 function renderPrintable(doc) {
-  const typeLabel = doc.docType === "invoice" ? "ФАКТУРА" : doc.docType === "offer" ? "ОФЕРТА" : "КРЕДИТНО ИЗВЕСТИЕ";
+  const typeLabel = doc.docType === "invoice" ? t("printInvoice") : doc.docType === "offer" ? t("printOffer") : t("printCredit");
   const cust = doc.customerSnapshot;
   const s = state.settings;
   return `
     <div class="no-print" style="display:flex; gap:8px; margin-bottom:1rem;">
-      <button onclick="backFromPrint()">← Назад</button>
-      <button class="primary" onclick="window.print()">Печат / PDF</button>
+      <button onclick="backFromPrint()">${t("back")}</button>
+      <button class="primary" onclick="window.print()">${t("printPdf")}</button>
     </div>
     <div class="print-sheet">
       <div style="display:flex; justify-content:space-between; margin-bottom:1.5rem;">
         <div>
           <div style="font-size:20px; font-weight:600;">${typeLabel}</div>
-          <div style="font-size:14px;">№ ${String(doc.number).padStart(6, "0")}</div>
-          ${doc.relatedInvoiceNumber ? `<div style="font-size:13px;">към фактура № ${String(doc.relatedInvoiceNumber).padStart(6, "0")}</div>` : ""}
+          <div style="font-size:14px;">${t("numberShort")} ${String(doc.number).padStart(6, "0")}</div>
+          ${doc.relatedInvoiceNumber ? `<div style="font-size:13px;">${t("towardsInvoiceNo", { n: String(doc.relatedInvoiceNumber).padStart(6, "0") })}</div>` : ""}
         </div>
-        <div style="font-size:13px;">Дата: ${doc.date}</div>
+        <div style="font-size:13px;">${t("dateColon", { d: doc.date })}</div>
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1.5rem; font-size:13px;">
         <div>
-          <div style="font-weight:600; margin-bottom:4px;">Доставчик</div>
+          <div style="font-weight:600; margin-bottom:4px;">${t("supplier")}</div>
           <div>${esc(s.companyName) || "—"}</div>
-          <div>ЕИК: ${esc(s.eik) || "—"}</div>
-          ${s.vatNumber ? `<div>ДДС №: ${esc(s.vatNumber)}</div>` : ""}
+          <div>${t("eik")}: ${esc(s.eik) || "—"}</div>
+          ${s.vatNumber ? `<div>${t("vatNumber")}: ${esc(s.vatNumber)}</div>` : ""}
           <div>${esc(s.address) || "—"}</div>
-          ${s.mol ? `<div>МОЛ: ${esc(s.mol)}</div>` : ""}
+          ${s.mol ? `<div>${t("mol")}: ${esc(s.mol)}</div>` : ""}
         </div>
         <div>
-          <div style="font-weight:600; margin-bottom:4px;">Получател</div>
+          <div style="font-weight:600; margin-bottom:4px;">${t("recipient")}</div>
           <div>${esc(doc.customerName) || "—"}</div>
-          ${cust && cust.eik ? `<div>ЕИК: ${esc(cust.eik)}</div>` : ""}
-          ${cust && cust.vatNumber ? `<div>ДДС №: ${esc(cust.vatNumber)}</div>` : ""}
+          ${cust && cust.eik ? `<div>${t("eik")}: ${esc(cust.eik)}</div>` : ""}
+          ${cust && cust.vatNumber ? `<div>${t("vatNumber")}: ${esc(cust.vatNumber)}</div>` : ""}
           ${cust && cust.address ? `<div>${esc(cust.address)}</div>` : ""}
         </div>
       </div>
       <table>
-        <thead><tr><th>Стока / услуга</th><th>Мярка</th><th>Кол-во</th><th>Ед. цена</th><th>Сума</th></tr></thead>
+        <thead><tr><th>${t("goodsService")}</th><th>${t("unit")}</th><th>${t("qty")}</th><th>${t("unitPrice")}</th><th>${t("sum")}</th></tr></thead>
         <tbody>
           ${doc.items.filter(it => it.name).map(it => `
             <tr>
               <td>${esc(it.name)}</td>
-              <td>${esc(it.unit)}</td>
+              <td>${esc(unitLabel(it.unit))}</td>
               <td>${it.qty}</td>
               <td>${money(it.price)}</td>
               <td>${money((Number(it.qty) || 0) * (Number(it.price) || 0))}</td>
@@ -1390,14 +1721,14 @@ function renderPrintable(doc) {
         </tbody>
       </table>
       <div style="text-align:right; font-size:13px; margin: 1rem 0 2rem;">
-        ${doc.docType === "invoice" ? `<div>Начин на плащане: ${PAYMENT_METHODS[doc.paymentMethod] || "В брой"}</div>` : ""}
-        <div>Данъчна основа: ${money(doc.subtotal)}</div>
-        <div>ДДС (${doc.vatRate}%): ${money(doc.vatAmount)}</div>
-        <div style="font-weight:600; font-size:15px;">Общо за плащане: ${money(doc.total)}</div>
+        ${doc.docType === "invoice" ? `<div>${t("paymentMethodColon", { m: paymentLabel(doc.paymentMethod) })}</div>` : ""}
+        <div>${t("taxBase")}: ${money(doc.subtotal)}</div>
+        <div>${t("vatLabel")} (${doc.vatRate}%): ${money(doc.vatAmount)}</div>
+        <div style="font-weight:600; font-size:15px;">${t("totalToPay")}: ${money(doc.total)}</div>
       </div>
       <div style="display:flex; justify-content:space-between; font-size:12px; color:#555; margin-top:3rem;">
-        <div>Съставил: _______________</div>
-        <div>Получил: _______________</div>
+        <div>${t("preparedBy")}: _______________</div>
+        <div>${t("receivedBy")}: _______________</div>
       </div>
     </div>
   `;
@@ -1423,18 +1754,18 @@ function beginCashEntry() { cashEntryForm = { amount: "", paymentMethod: "cash",
 function updateCashEntryField(field, value) { cashEntryForm[field] = value; }
 function cancelCashEntry() { cashEntryForm = null; render(); }
 async function saveCashEntry() {
-  if (!isValidMoney(cashEntryForm.amount) || Number(cashEntryForm.amount) <= 0) { alert("Въведете валидна сума (число > 0)."); return; }
+  if (!isValidMoney(cashEntryForm.amount) || Number(cashEntryForm.amount) <= 0) { alert(t("enterValidAmount")); return; }
   const row = { owner_id: session.user.id, date: cashViewDate, amount: Number(cashEntryForm.amount), payment_method: cashEntryForm.paymentMethod, note: cashEntryForm.note || "" };
   const res = await supabaseClient.from("cash_entries").insert(row).select().single();
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.cashEntries.push(cashEntryRowToObj(res.data));
   cashEntryForm = null;
   cacheState(); flashSaved(true); render();
 }
 async function deleteCashEntry(id) {
-  if (!confirm("Изтриване на това постъпление?")) return;
+  if (!confirm(t("deleteEntryConfirm"))) return;
   const res = await supabaseClient.from("cash_entries").delete().eq("id", id);
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.cashEntries = state.cashEntries.filter(e => e.id !== id);
   cacheState(); flashSaved(true); render();
 }
@@ -1446,10 +1777,10 @@ function beginCashEdit() {
 function updateCashField(field, value) { cashForm[field] = value; }
 function cancelCashEdit() { cashForm = null; render(); }
 async function saveCashClosing() {
-  if (!isValidMoney(cashForm.countedCash)) { alert("Въведете валидна преброена сума (число ≥ 0)."); return; }
+  if (!isValidMoney(cashForm.countedCash)) { alert(t("enterValidCounted")); return; }
   const row = { owner_id: session.user.id, date: cashViewDate, counted_cash: Number(cashForm.countedCash), note: cashForm.note || "", closed_at: new Date().toISOString() };
   const res = await supabaseClient.from("cash_closings").upsert(row, { onConflict: "owner_id,date" }).select().single();
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   const obj = cashClosingRowToObj(res.data);
   const idx = state.cashClosings.findIndex(c => c.date === obj.date);
   if (idx >= 0) state.cashClosings[idx] = obj; else state.cashClosings.push(obj);
@@ -1468,45 +1799,45 @@ function renderCash() {
     ? Number(cashForm.countedCash) - summary.byMethod.cash : null;
   const history = state.cashClosings.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 14);
   return `
-    <h2>Каса</h2>
+    <h2>${t("cashTitle")}</h2>
     <div class="card">
-      <div class="field-wrap" style="max-width:220px;"><label class="field">Ден</label><input type="date" value="${cashViewDate}" onchange="updateCashViewDate(this.value)"></div>
+      <div class="field-wrap" style="max-width:220px;"><label class="field">${t("day")}</label><input type="date" value="${cashViewDate}" onchange="updateCashViewDate(this.value)"></div>
       <div class="metrics-grid">
-        <div class="metric"><div class="label">Очаквано в брой</div><div class="value">${money(summary.byMethod.cash)}</div></div>
-        <div class="metric"><div class="label">Очаквано с карта</div><div class="value">${money(summary.byMethod.card)}</div></div>
-        <div class="metric"><div class="label">Очаквано с банков превод</div><div class="value">${money(summary.byMethod.bank)}</div></div>
-        <div class="metric"><div class="label">Нетно за деня (${summary.invoiceCount} фактури, ${summary.entries.length} продажби на дребно)</div><div class="value">${money(summary.total)}</div></div>
+        <div class="metric"><div class="label">${t("expectedCash")}</div><div class="value">${money(summary.byMethod.cash)}</div></div>
+        <div class="metric"><div class="label">${t("expectedCard")}</div><div class="value">${money(summary.byMethod.card)}</div></div>
+        <div class="metric"><div class="label">${t("expectedBank")}</div><div class="value">${money(summary.byMethod.bank)}</div></div>
+        <div class="metric"><div class="label">${t("netForDay", { inv: summary.invoiceCount, ret: summary.entries.length })}</div><div class="value">${money(summary.total)}</div></div>
       </div>
       ${editing ? `
-        <div class="field-wrap"><label class="field">Преброена сума в брой (€)</label><input type="number" step="0.01" value="${esc(cashForm.countedCash)}" oninput="updateCashField('countedCash', this.value)"></div>
-        <div class="field-wrap"><label class="field">Бележка (по избор)</label><input value="${esc(cashForm.note)}" oninput="updateCashField('note', this.value)" placeholder="напр. причина за разлика"></div>
-        ${liveDiff !== null ? `<p>Разлика спрямо очакваното в брой: ${diffLabel(liveDiff)}</p>` : ""}
-        <div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveCashClosing()">Запази приключване</button><button onclick="cancelCashEdit()">Отказ</button></div>
+        <div class="field-wrap"><label class="field">${t("countedCashLabel")}</label><input type="number" step="0.01" value="${esc(cashForm.countedCash)}" oninput="updateCashField('countedCash', this.value)"></div>
+        <div class="field-wrap"><label class="field">${t("noteOptional")}</label><input value="${esc(cashForm.note)}" oninput="updateCashField('note', this.value)" placeholder="${t("diffReasonPlaceholder")}"></div>
+        ${liveDiff !== null ? `<p>${t("diffVsExpected")}${diffLabel(liveDiff)}</p>` : ""}
+        <div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveCashClosing()">${t("saveClosing")}</button><button onclick="cancelCashEdit()">${t("cancel")}</button></div>
       ` : `
         ${existing ? `
-          <p>Преброено в брой: <b>${money(existing.countedCash)}</b> — разлика: ${diffLabel(existing.countedCash - summary.byMethod.cash)}</p>
+          <p>${t("countedInCash")}<b>${money(existing.countedCash)}</b> — ${t("difference")}${diffLabel(existing.countedCash - summary.byMethod.cash)}</p>
           ${existing.note ? `<p class="muted">${esc(existing.note)}</p>` : ""}
-        ` : `<p class="muted">Денят още не е приключен.</p>`}
-        <button class="primary" ${offline ? "disabled" : ""} onclick="beginCashEdit()">${existing ? "Редакция на приключването" : "Приключи деня"}</button>
+        ` : `<p class="muted">${t("dayNotClosed")}</p>`}
+        <button class="primary" ${offline ? "disabled" : ""} onclick="beginCashEdit()">${existing ? t("editClosing") : t("closeDay")}</button>
       `}
     </div>
     <div class="card">
       <div class="row" style="margin-bottom: ${summary.entries.length || cashEntryForm ? "0.8rem" : "0"};">
-        <h3 style="margin:0;">Продажби на дребно (без фактура)</h3>
-        ${!cashEntryForm ? `<button class="primary" ${offline ? "disabled" : ""} onclick="beginCashEntry()">+ Добави постъпление</button>` : ""}
+        <h3 style="margin:0;">${t("retailTitle")}</h3>
+        ${!cashEntryForm ? `<button class="primary" ${offline ? "disabled" : ""} onclick="beginCashEntry()">${t("addEntry")}</button>` : ""}
       </div>
-      ${summary.entries.length === 0 && !cashEntryForm ? `<p class="muted">Няма добавени продажби на дребно за деня.</p>` : ""}
+      ${summary.entries.length === 0 && !cashEntryForm ? `<p class="muted">${t("noRetailEntries")}</p>` : ""}
       ${summary.entries.length ? `
         <div class="table-scroll">
         <table class="data mobile-cards">
-          <thead><tr><th>Сума</th><th>Начин на плащане</th><th>Бележка</th><th></th></tr></thead>
+          <thead><tr><th>${t("amount")}</th><th>${t("paymentMethod")}</th><th>${t("note")}</th><th></th></tr></thead>
           <tbody>
             ${summary.entries.map(e => `
               <tr>
-                <td data-label="Сума">${money(e.amount)}</td>
-                <td class="muted" data-label="Начин на плащане">${PAYMENT_METHODS[e.paymentMethod] || "В брой"}</td>
-                <td class="muted" data-label="Бележка">${esc(e.note || "—")}</td>
-                <td class="actions-cell"><button class="danger" ${offline ? "disabled" : ""} onclick="deleteCashEntry('${e.id}')">Изтрий</button></td>
+                <td data-label="${t("amount")}">${money(e.amount)}</td>
+                <td class="muted" data-label="${t("paymentMethod")}">${paymentLabel(e.paymentMethod)}</td>
+                <td class="muted" data-label="${t("note")}">${esc(e.note || "—")}</td>
+                <td class="actions-cell"><button class="danger" ${offline ? "disabled" : ""} onclick="deleteCashEntry('${e.id}')">${t("del")}</button></td>
               </tr>
             `).join("")}
           </tbody>
@@ -1515,25 +1846,25 @@ function renderCash() {
       ` : ""}
       ${cashEntryForm ? `
         <div class="grid" style="grid-template-columns: 1fr 1fr 2fr; margin-top: 10px;">
-          <div class="field-wrap"><label class="field">Сума (€)</label><input type="number" step="0.01" value="${esc(cashEntryForm.amount)}" oninput="updateCashEntryField('amount', this.value)"></div>
-          <div class="field-wrap"><label class="field">Начин на плащане</label>
+          <div class="field-wrap"><label class="field">${t("amountEur")}</label><input type="number" step="0.01" value="${esc(cashEntryForm.amount)}" oninput="updateCashEntryField('amount', this.value)"></div>
+          <div class="field-wrap"><label class="field">${t("paymentMethod")}</label>
             <select onchange="updateCashEntryField('paymentMethod', this.value)">
-              ${Object.entries(PAYMENT_METHODS).map(([k, label]) => `<option value="${k}" ${cashEntryForm.paymentMethod === k ? "selected" : ""}>${label}</option>`).join("")}
+              ${PAYMENT_METHOD_KEYS.map(k => `<option value="${k}" ${cashEntryForm.paymentMethod === k ? "selected" : ""}>${paymentLabel(k)}</option>`).join("")}
             </select>
           </div>
-          <div class="field-wrap"><label class="field">Бележка (по избор)</label><input value="${esc(cashEntryForm.note)}" oninput="updateCashEntryField('note', this.value)" placeholder="напр. клиент на място"></div>
+          <div class="field-wrap"><label class="field">${t("noteOptional")}</label><input value="${esc(cashEntryForm.note)}" oninput="updateCashEntryField('note', this.value)" placeholder="${t("entryNotePlaceholder")}"></div>
         </div>
-        <div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveCashEntry()">Запази постъпление</button><button onclick="cancelCashEntry()">Отказ</button></div>
+        <div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveCashEntry()">${t("saveEntry")}</button><button onclick="cancelCashEntry()">${t("cancel")}</button></div>
       ` : ""}
     </div>
-    <h3>История</h3>
+    <h3>${t("history")}</h3>
     <div class="table-scroll">
     <table class="data mobile-cards">
-      <thead><tr><th>Дата</th><th>Очаквано в брой</th><th>Преброено</th><th>Разлика</th></tr></thead>
+      <thead><tr><th>${t("date")}</th><th>${t("expectedCashCol")}</th><th>${t("countedCol")}</th><th>${t("diffCol")}</th></tr></thead>
       <tbody>
-        ${history.length === 0 ? '<tr><td colspan="4" class="muted">Няма приключени дни още.</td></tr>' : history.map(c => {
+        ${history.length === 0 ? `<tr><td colspan="4" class="muted">${t("noClosedDays")}</td></tr>` : history.map(c => {
           const s = computeCashSummary(c.date);
-          return `<tr><td data-label="Дата">${c.date}</td><td data-label="Очаквано в брой">${money(s.byMethod.cash)}</td><td data-label="Преброено">${money(c.countedCash)}</td><td data-label="Разлика">${diffLabel(c.countedCash - s.byMethod.cash)}</td></tr>`;
+          return `<tr><td data-label="${t("date")}">${c.date}</td><td data-label="${t("expectedCashCol")}">${money(s.byMethod.cash)}</td><td data-label="${t("countedCol")}">${money(c.countedCash)}</td><td data-label="${t("diffCol")}">${diffLabel(c.countedCash - s.byMethod.cash)}</td></tr>`;
         }).join("")}
       </tbody>
     </table>
@@ -1551,17 +1882,17 @@ function renderReports() {
   invoices.forEach(d => { const key = d.date.slice(0, 7); monthly[key] = (monthly[key] || 0) + d.total; });
   const monthlyList = Object.entries(monthly).sort((a, b) => a[0].localeCompare(b[0]));
   return `
-    <h2>Справки</h2>
-    <h3>Оборот по месеци</h3>
+    <h2>${t("reportsTitle")}</h2>
+    <h3>${t("monthlyTurnover")}</h3>
     <div class="table-scroll">
     <table class="data"><tbody>
-      ${monthlyList.length === 0 ? '<tr><td class="muted">Няма данни още.</td></tr>' : monthlyList.map(([m, total]) => `<tr><td>${m}</td><td style="text-align:right">${money(total)}</td></tr>`).join("")}
+      ${monthlyList.length === 0 ? `<tr><td class="muted">${t("noDataYet")}</td></tr>` : monthlyList.map(([m, total]) => `<tr><td>${m}</td><td style="text-align:right">${money(total)}</td></tr>`).join("")}
     </tbody></table>
     </div>
-    <h3>Топ продукти по приход</h3>
+    <h3>${t("topProducts")}</h3>
     <div class="table-scroll">
     <table class="data"><tbody>
-      ${topProducts.length === 0 ? '<tr><td class="muted">Няма данни още.</td></tr>' : topProducts.map(([name, total]) => `<tr><td>${esc(name)}</td><td style="text-align:right">${money(total)}</td></tr>`).join("")}
+      ${topProducts.length === 0 ? `<tr><td class="muted">${t("noDataYet")}</td></tr>` : topProducts.map(([name, total]) => `<tr><td>${esc(name)}</td><td style="text-align:right">${money(total)}</td></tr>`).join("")}
     </tbody></table>
     </div>
   `;
@@ -1578,7 +1909,7 @@ async function saveSettings() {
   settingsErrors = validateSettings(settingsForm);
   if (Object.keys(settingsErrors).length) { render(); return; }
   const res = await supabaseClient.from("settings").update(settingsObjToRow(settingsForm)).eq("owner_id", session.user.id).select().single();
-  if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.settings = settingsRowToObj(res.data);
   settingsForm = null; settingsEditing = false; settingsErrors = {};
   cacheState(); flashSaved(true);
@@ -1598,30 +1929,30 @@ function renderSettings() {
       ${fieldError(err, key)}
     </div>`;
   return `
-    <h2>Настройки на фирмата</h2>
-    ${settingsSavedAt ? `<div class="info-box">Настройките са запазени.</div>` : ""}
+    <h2>${t("settingsTitle")}</h2>
+    ${settingsSavedAt ? `<div class="info-box">${t("settingsSaved")}</div>` : ""}
     <div class="card">
       <div class="grid" style="grid-template-columns: 1fr 1fr;">
-        ${field("Име на фирма / ЕТ", "companyName")}
-        ${field("ЕИК", "eik")}
-        ${field("ДДС номер", "vatNumber", "BG123456789")}
-        ${field("МОЛ", "mol")}
-        ${field("Адрес", "address")}
+        ${field(t("companyName"), "companyName")}
+        ${field(t("eik"), "eik")}
+        ${field(t("vatNumber"), "vatNumber", "BG123456789")}
+        ${field(t("mol"), "mol")}
+        ${field(t("address"), "address")}
         ${field("IBAN", "iban", "BG00XXXX00000000000000")}
-        <div class="field-wrap"><label class="field">Следващ номер на фактура</label><input value="${s.nextInvoiceNo}" disabled title="Определя се автоматично от сървъра, за да не се дублират номера между устройства."></div>
-        <div class="field-wrap"><label class="field">Следващ номер на оферта</label><input value="${s.nextOfferNo}" disabled></div>
+        <div class="field-wrap"><label class="field">${t("nextInvoiceNo")}</label><input value="${s.nextInvoiceNo}" disabled title="${t("autoNumberHint")}"></div>
+        <div class="field-wrap"><label class="field">${t("nextOfferNo")}</label><input value="${s.nextOfferNo}" disabled></div>
       </div>
       ${editing
-        ? `<div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveSettings()">Запази настройки</button><button onclick="cancelSettingsEdit()">Отказ</button></div>`
-        : `<div class="savebar"><button ${offline ? "disabled" : ""} onclick="editSettings()">Редакция</button></div>`}
+        ? `<div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveSettings()">${t("saveSettings")}</button><button onclick="cancelSettingsEdit()">${t("cancel")}</button></div>`
+        : `<div class="savebar"><button ${offline ? "disabled" : ""} onclick="editSettings()">${t("edit")}</button></div>`}
     </div>
-    <p class="muted">Съвет: обсъдете със счетоводителя дали са нужни допълнителни стъпки, преди да започнете да изпращате фактури на клиенти.</p>
+    <p class="muted">${t("accountantHint")}</p>
   `;
 }
 
 // ---------- BACKUP / DATA ----------
 function downloadBackup() {
-  downloadBlob(JSON.stringify(state, null, 2), "application/json", `svejo-vkusno-backup-${todayStr()}.json`);
+  downloadBlob(JSON.stringify(state, null, 2), "application/json", `shopassistant-backup-${todayStr()}.json`);
 }
 function triggerImport() { document.getElementById("import-file-input").click(); }
 async function handleImportFile(input) {
@@ -1633,7 +1964,7 @@ async function handleImportFile(input) {
       const imported = JSON.parse(e.target.result);
       if (!imported.products && !imported.customers && !imported.documents) throw new Error("bad format");
       const nProd = (imported.products || []).length, nCust = (imported.customers || []).length, nDoc = (imported.documents || []).length;
-      if (!confirm(`Ще се добавят ${nProd} продукта, ${nCust} клиента и ${nDoc} документа към текущите данни в облака (нищо няма да се изтрие). Продължи?`)) return;
+      if (!confirm(t("importConfirm", { p: nProd, c: nCust, d: nDoc }))) return;
 
       if (imported.products && imported.products.length) {
         const rows = imported.products.map(p => ({ owner_id: session.user.id, name: p.name, category: p.category || "", unit: p.unit || "", price: Number(p.price) || 0, stock: p.stock === "" || p.stock == null ? null : Number(p.stock) }));
@@ -1663,30 +1994,30 @@ async function handleImportFile(input) {
         if (Object.keys(updates).length) await supabaseClient.from("settings").update(updates).eq("owner_id", session.user.id);
       }
       await loadAllData();
-      alert("Данните са качени успешно.");
+      alert(t("importSuccess"));
     } catch (err) {
       console.error(err);
-      alert("Файлът не изглежда да е валиден резервен файл, или качването се провали: " + err.message);
+      alert(t("importFail") + err.message);
     }
   };
   reader.readAsText(file);
 }
 function renderBackup() {
   return `
-    <h2>Данни / Резервно копие</h2>
+    <h2>${t("backupTitle")}</h2>
     <div class="info-box">
-      Данните вече се пазят в облак (Supabase), синхронизирани на живо между всички устройства, на които влезете с този профил. Секцията по-долу е за допълнителна лична резервна копия и за пренасяне на данни от стария офлайн файл.
+      ${t("cloudInfo")}
     </div>
     <div class="card">
-      <h3 style="margin-top:0;">Изтегляне на резервно копие</h3>
-      <p class="muted">Препоръчително веднъж месечно, като допълнителна застраховка извън облака.</p>
-      <button class="primary" onclick="downloadBackup()">Изтегли резервно копие (JSON)</button>
+      <h3 style="margin-top:0;">${t("downloadBackupTitle")}</h3>
+      <p class="muted">${t("downloadBackupHint")}</p>
+      <button class="primary" onclick="downloadBackup()">${t("downloadBackupBtn")}</button>
     </div>
     <div class="card">
-      <h3 style="margin-top:0;">Качване на данни от файл</h3>
-      <p class="muted">Избери JSON файл (стар офлайн бекъп, или каталог с продукти) — данните ще се добавят към облака, без да трият текущите.</p>
+      <h3 style="margin-top:0;">${t("uploadTitle")}</h3>
+      <p class="muted">${t("uploadHint")}</p>
       <input type="file" id="import-file-input" accept="application/json" style="display:none" onchange="handleImportFile(this)">
-      <button ${offline ? "disabled" : ""} onclick="triggerImport()">Качи файл (JSON)</button>
+      <button ${offline ? "disabled" : ""} onclick="triggerImport()">${t("uploadBtn")}</button>
     </div>
   `;
 }
