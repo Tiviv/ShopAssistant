@@ -140,6 +140,8 @@
   .detail-row .label { color: var(--text-secondary); }
 
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .search-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .search-box { max-width: 300px; }
   .mobile-topbar { display: none; }
   .sidebar-overlay { display: none; }
 
@@ -365,6 +367,9 @@ let cashForm = null;
 let cashEntryForm = null;
 let creditForm = null;
 let creditFormError = "";
+let productSearch = "";
+let customerSearch = "";
+let docSearch = "";
 
 function loadConfig() {
   try { return JSON.parse(localStorage.getItem(CONFIG_KEY)) || null; } catch (e) { return null; }
@@ -692,10 +697,36 @@ function setTab(tab) {
   settingsForm = null; settingsEditing = false; settingsSavedAt = null;
   viewingCustomerId = null; cashForm = null; cashEntryForm = null;
   creditForm = null; creditFormError = "";
+  productSearch = ""; customerSearch = ""; docSearch = "";
   sidebarOpen = false;
   render();
 }
 function toggleSidebar() { sidebarOpen = !sidebarOpen; render(); }
+
+// ---------- search / filtering ----------
+function matchesSearch(parts, query) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) return true;
+  return parts.filter(Boolean).join(" ").toLowerCase().includes(q);
+}
+// render() rebuilds the whole view, which would drop focus mid-typing, so the
+// caret is put back where it was afterwards.
+function updateSearch(kind, value) {
+  if (kind === "product") productSearch = value;
+  else if (kind === "customer") customerSearch = value;
+  else docSearch = value;
+  render();
+  const el = document.getElementById("search-" + kind);
+  if (el) { el.focus(); const n = el.value.length; el.setSelectionRange(n, n); }
+}
+function renderSearchBox(kind, value, placeholder, shownCount, totalCount) {
+  return `
+    <div class="search-row no-print">
+      <input id="search-${kind}" class="search-box" value="${esc(value)}" oninput="updateSearch('${kind}', this.value)" placeholder="${esc(placeholder)}">
+      ${value.trim() ? `<span class="muted" style="font-size:12px;">${shownCount} от ${totalCount}${shownCount === 0 ? " — няма съвпадения" : ""}</span>` : ""}
+    </div>
+  `;
+}
 
 function render() {
   const root = document.getElementById("root");
@@ -816,14 +847,16 @@ function renderProducts() {
       <div class="savebar"><button class="primary" onclick="saveProduct()">Запази</button><button onclick="cancelProductEdit()">Отказ</button></div>
     </div>
   ` : "";
+  const shown = state.products.filter(p => matchesSearch([p.name, p.category, p.unit], productSearch));
   return `
     <div class="row"><h2>Продукти</h2><button class="primary" ${offline ? "disabled" : ""} onclick="newProduct()">+ Нов продукт</button></div>
     ${editForm}
+    ${renderSearchBox("product", productSearch, "Търсене по име или категория…", shown.length, state.products.length)}
     <div class="table-scroll">
     <table class="data mobile-cards">
       <thead><tr><th>Име</th><th>Категория</th><th>Мярка</th><th>Цена</th><th>Наличност</th><th></th></tr></thead>
       <tbody>
-        ${state.products.length === 0 ? '<tr><td colspan="6" class="muted">Няма добавени продукти.</td></tr>' : state.products.map(p => `
+        ${shown.length === 0 ? `<tr><td colspan="6" class="muted">${state.products.length === 0 ? "Няма добавени продукти." : "Няма продукти, отговарящи на търсенето."}</td></tr>` : shown.map(p => `
           <tr>
             <td data-label="Име">${esc(p.name)}</td>
             <td class="muted" data-label="Категория">${esc(p.category)}</td>
@@ -905,13 +938,15 @@ function renderCustomers() {
     </div>
   ` : "";
   const viewingCustomer = viewingCustomerId ? state.customers.find(c => c.id === viewingCustomerId) : null;
+  const shown = state.customers.filter(c => matchesSearch([c.name, c.eik, c.vatNumber, c.phone, c.email], customerSearch));
   return `
     <div class="row"><h2>Клиенти</h2><button class="primary" ${offline ? "disabled" : ""} onclick="newCustomer()">+ Нов клиент</button></div>
     ${editForm}
+    ${renderSearchBox("customer", customerSearch, "Търсене по име, ЕИК или телефон…", shown.length, state.customers.length)}
     <div class="table-scroll">
     <table class="data mobile-cards">
       <tbody>
-        ${state.customers.length === 0 ? '<tr><td class="muted">Няма добавени клиенти.</td></tr>' : state.customers.map(c => `
+        ${shown.length === 0 ? `<tr><td class="muted">${state.customers.length === 0 ? "Няма добавени клиенти." : "Няма клиенти, отговарящи на търсенето."}</td></tr>` : shown.map(c => `
           <tr>
             <td style="text-align:left;"><div>${esc(c.name)}</div><div class="muted" style="font-size:12px;">${c.eik ? "ЕИК: " + esc(c.eik) + " " : ""}${esc(c.phone || "")}</div></td>
             <td class="actions-cell">
@@ -934,6 +969,25 @@ function emptyLineItem() { return { id: uid(), productId: "", name: "", unit: ""
 function newDoc(docType) {
   docForm = { docType, date: todayStr(), customerId: "", customerName: "", items: [emptyLineItem()], vatRate: 20, paid: false, paymentMethod: "cash" };
   creditForm = null; creditFormError = "";
+  render();
+}
+// Editing keeps the document's existing number, so fixing a typo no longer
+// costs a number the way delete-and-recreate did.
+function editDoc(id) {
+  const d = state.documents.find(x => x.id === id);
+  if (!d) return;
+  if (d.docType === "credit") { alert("Кредитните известия не се редактират. Изтрийте го и издайте ново."); return; }
+  if (d.docType === "invoice") {
+    const credits = state.documents.filter(x => x.docType === "credit" && x.relatedInvoiceNumber === d.number);
+    if (credits.length && !confirm(`Към фактура № ${d.number} има издадено кредитно известие. Промяната тук няма да преизчисли кредитното. Да продължим ли?`)) return;
+  }
+  docForm = {
+    editingId: d.id, number: d.number, docType: d.docType, date: d.date,
+    customerId: d.customerId || "", customerName: d.customerName || "",
+    items: d.items.length ? d.items.map(it => ({ ...it })) : [emptyLineItem()],
+    vatRate: d.vatRate, paid: d.paid, paymentMethod: d.paymentMethod || "cash"
+  };
+  creditForm = null; creditFormError = ""; printingDocId = null;
   render();
 }
 function cancelDocForm() { docForm = null; render(); }
@@ -984,17 +1038,39 @@ async function saveDoc() {
   const customer = state.customers.find(c => c.id === docForm.customerId);
   const t = computeDocTotals();
 
-  const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: docForm.docType });
-  if (numErr) { flashSaved(false, "Грешка при номериране: " + numErr.message); return; }
-
-  const row = {
-    owner_id: session.user.id, doc_type: docForm.docType, number,
+  const fields = {
     date: docForm.date, customer_id: docForm.customerId || null,
     customer_name: customer ? customer.name : (docForm.customerName || "Без данни"),
     customer_snapshot: customer || null, items: docForm.items,
     vat_rate: docForm.vatRate, subtotal: t.subtotal, vat_amount: t.vatAmount, total: t.total,
     paid: !!docForm.paid, payment_method: docForm.paymentMethod || "cash"
   };
+
+  if (docForm.editingId) {
+    const original = state.documents.find(x => x.id === docForm.editingId);
+    // Snapshot the pre-edit lines before state is replaced — stock has to be
+    // rewound by exactly what the old version took before the new one applies.
+    const originalItems = original ? original.items.map(it => ({ ...it })) : [];
+    const wasInvoice = original && original.docType === "invoice";
+    const res = await supabaseClient.from("documents").update(fields).eq("id", docForm.editingId).select().single();
+    if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
+    const updated = docRowToObj(res.data);
+    const idx = state.documents.findIndex(x => x.id === updated.id);
+    if (idx >= 0) state.documents[idx] = updated;
+    docForm = null;
+    cacheState(); flashSaved(true); render();
+    if (wasInvoice) {
+      await applyStockAdjustments(originalItems.map(it => ({ ...it, qty: -Number(it.qty) })));
+      await applyStockAdjustments(updated.items);
+    }
+    alert(`Документ № ${updated.number} е обновен.`);
+    return;
+  }
+
+  const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: docForm.docType });
+  if (numErr) { flashSaved(false, "Грешка при номериране: " + numErr.message); return; }
+
+  const row = { owner_id: session.user.id, doc_type: docForm.docType, number, ...fields };
   const res = await supabaseClient.from("documents").insert(row).select().single();
   if (res.error) { flashSaved(false, "Грешка: " + res.error.message); return; }
   state.documents.push(docRowToObj(res.data));
@@ -1133,9 +1209,10 @@ function renderDocuments(docType, title) {
   if (printingDocId) return renderPrintable(state.documents.find(d => d.id === printingDocId));
   // Credit notes belong conceptually to the invoice they reverse, so they're
   // shown inline in the Фактури list rather than hidden with no view at all.
-  const list = docType === "invoice"
+  const all = docType === "invoice"
     ? state.documents.filter(d => d.docType === "invoice" || d.docType === "credit")
     : state.documents.filter(d => d.docType === docType);
+  const list = all.filter(d => matchesSearch([String(d.number), d.customerName, d.date, PAYMENT_METHODS[d.paymentMethod]], docSearch));
   const formHtml = docForm && docForm.docType === docType ? renderDocForm() : "";
   const creditFormHtml = docType === "invoice" && creditForm ? renderCreditForm() : "";
   return `
@@ -1148,11 +1225,12 @@ function renderDocuments(docType, title) {
     </div>
     ${formHtml}
     ${creditFormHtml}
+    ${renderSearchBox("doc", docSearch, "Търсене по номер, клиент или дата…", list.length, all.length)}
     <div class="table-scroll">
     <table class="data mobile-cards">
       <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Общо</th>${docType === "invoice" ? "<th>Плащане</th>" : ""}<th>Статус</th><th></th></tr></thead>
       <tbody>
-        ${list.length === 0 ? `<tr><td colspan="${docType === "invoice" ? 7 : 6}" class="muted">Няма създадени документи.</td></tr>` : list.slice().reverse().map(d => {
+        ${list.length === 0 ? `<tr><td colspan="${docType === "invoice" ? 7 : 6}" class="muted">${all.length === 0 ? "Няма създадени документи." : "Няма документи, отговарящи на търсенето."}</td></tr>` : list.slice().reverse().map(d => {
           const isCredit = d.docType === "credit";
           return `
           <tr>
@@ -1168,6 +1246,7 @@ function renderDocuments(docType, title) {
             }</td>
             <td class="actions-cell">
               <button onclick="viewDoc('${d.id}')">Преглед / Печат</button>
+              ${!isCredit ? `<button ${offline ? "disabled" : ""} onclick="editDoc('${d.id}')">Редакция</button>` : ""}
               ${docType === "offer" ? `<button ${offline ? "disabled" : ""} onclick="convertToInvoice('${d.id}')">Във фактура</button>` : ""}
               ${docType === "invoice" && !isCredit ? `<button ${offline ? "disabled" : ""} onclick="beginCreditNote('${d.id}')">Кредитно</button>` : ""}
               <button class="danger" ${offline ? "disabled" : ""} onclick="deleteDocument('${d.id}')">Изтрий</button>
@@ -1182,8 +1261,10 @@ function renderDocuments(docType, title) {
 
 function renderDocForm() {
   const t = computeDocTotals();
+  const typeLabel = docForm.docType === "invoice" ? "фактура" : "оферта";
   return `
     <div class="card">
+      ${docForm.editingId ? `<h3 style="margin-top:0;">Редакция на ${typeLabel} № ${docForm.number}</h3><p class="muted" style="font-size:13px;">Номерът остава същият. Наличностите се преизчисляват спрямо промените.</p>` : ""}
       <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom:6px;">
         <div class="field-wrap"><label class="field">Дата</label><input type="date" value="${docForm.date}" oninput="updateDocField('date', this.value)"></div>
         <div class="field-wrap"><label class="field">Клиент</label>
@@ -1224,7 +1305,7 @@ function renderDocForm() {
         <div>ДДС (${docForm.vatRate}%): ${money(t.vatAmount)}</div>
         <div style="font-weight:600;">Общо: ${money(t.total)}</div>
       </div>
-      <div class="savebar"><button class="primary" onclick="saveDoc()">Запази</button><button onclick="cancelDocForm()">Отказ</button></div>
+      <div class="savebar"><button class="primary" onclick="saveDoc()">${docForm.editingId ? "Запази промените" : "Запази"}</button><button onclick="cancelDocForm()">Отказ</button></div>
     </div>
   `;
 }
