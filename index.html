@@ -694,10 +694,33 @@ let productSearch = "";
 let customerSearch = "";
 let docSearch = "";
 
-function loadConfig() {
-  try { return JSON.parse(localStorage.getItem(CONFIG_KEY)) || null; } catch (e) { return null; }
+// The Supabase dashboard shows several URLs, and it's easy to copy the REST
+// endpoint (".../rest/v1/") instead of the bare Project URL. supabase-js
+// appends its own paths, so that yields ".../rest/v1/rest/v1/products" and
+// every request fails with "Invalid path specified in request URL" — while
+// login fails differently, since auth lives under /auth/v1. Rather than trust
+// the input, strip any API path back to the project origin.
+function normalizeProjectUrl(u) {
+  return String(u || "").trim()
+    .replace(/\/+$/, "")
+    .replace(/\/(rest|auth|storage|realtime|functions)\/v\d+$/i, "")
+    .replace(/\/+$/, "");
 }
-function saveConfig(c) { localStorage.setItem(CONFIG_KEY, JSON.stringify(c)); }
+function loadConfig() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CONFIG_KEY)) || null;
+    if (!c || !c.url) return c;
+    // Repair a connection that was saved wrong before this check existed:
+    // otherwise the browser stays broken, and re-opening a corrected share
+    // link can't help — that only applies when nothing is saved at all.
+    const fixed = normalizeProjectUrl(c.url);
+    if (fixed !== c.url) { c.url = fixed; localStorage.setItem(CONFIG_KEY, JSON.stringify(c)); }
+    return c;
+  } catch (e) { return null; }
+}
+function saveConfig(c) {
+  localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...c, url: normalizeProjectUrl(c.url) }));
+}
 function clearConfig() { localStorage.removeItem(CONFIG_KEY); cfg = null; }
 
 function cacheState() {
