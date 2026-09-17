@@ -332,6 +332,7 @@ const TRANSLATIONS = {
     productsGroup: "Продукти", departmentsGroup: "Отдели",
     newCategoryOption: "+ Нова категория…", newCategoryPrompt: "Име на новата категория:",
     categoryExists: "Категорията „{name}“ вече съществува.",
+    categorySaveFailed: "Категорията не можа да бъде запазена. Опитайте отново след малко. Ако проблемът продължава, съобщете на човека, който поддържа приложението.",
     lineModeQty: "× цена", lineModeAmount: "обща сума", lineMode: "Начин на изчисление",
     amountPlaceholder: "сума",
     addRow: "+ Добави ред", taxBase: "Данъчна основа", vatLabel: "ДДС", removeTitle: "Премахни",
@@ -474,6 +475,7 @@ const TRANSLATIONS = {
     productsGroup: "Products", departmentsGroup: "Departments",
     newCategoryOption: "+ New category…", newCategoryPrompt: "Name of the new category:",
     categoryExists: "Category \u201c{name}\u201d already exists.",
+    categorySaveFailed: "The category could not be saved. Please try again in a moment. If it keeps happening, let whoever looks after the app know.",
     lineModeQty: "× price", lineModeAmount: "flat amount", lineMode: "How this line is priced",
     amountPlaceholder: "amount",
     addRow: "+ Add row", taxBase: "Net amount", vatLabel: "VAT", removeTitle: "Remove",
@@ -1360,7 +1362,17 @@ async function addCategory() {
   if (existing) { alert(t("categoryExists", { name: existing })); return existing; }
   const next = [...(state.settings.categories || []), name];
   const res = await supabaseClient.from("settings").update({ categories: next }).eq("owner_id", session.user.id).select().single();
-  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return null; }
+  if (res.error) {
+    // The shop owner gets one plain sentence — the real reason (a missing column
+    // after a schema change, a dropped connection) means nothing to them. It goes
+    // to the console instead, where whoever maintains the app can still read it.
+    // alert(), not the sidebar flash: the caller re-renders right after this
+    // returns, which would wipe the flash before it could be read — and on a
+    // phone that element sits inside a closed menu anyway.
+    console.error("saving category failed", res.error);
+    alert(t("categorySaveFailed"));
+    return null;
+  }
   state.settings = settingsRowToObj(res.data);
   cacheState();
   return name;
