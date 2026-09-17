@@ -106,6 +106,15 @@
   .print-sheet th:first-child, .print-sheet td:first-child { text-align: left; }
   .print-sheet thead tr { border-bottom: 1px solid #ccc; }
   .print-sheet tbody tr { border-bottom: 1px solid #eee; }
+  .cat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .cat-row:last-of-type { border-bottom: none; }
   .savebar { display: flex; gap: 8px; margin-top: 8px; }
   .save-flash { font-size: 12px; color: var(--text-muted); min-height: 16px; margin-top: 8px; }
   .backup-warning { background: var(--warning-bg); color: var(--warning); padding: 0.8rem 1rem; border-radius: var(--radius); font-size: 13px; margin-bottom: 1rem; }
@@ -333,6 +342,12 @@ const TRANSLATIONS = {
     newCategoryOption: "+ Нова категория…", newCategoryPrompt: "Име на новата категория:",
     categoryExists: "Категорията „{name}“ вече съществува.",
     categorySaveFailed: "Категорията не можа да бъде запазена. Опитайте отново след малко. Ако проблемът продължава, съобщете на човека, който поддържа приложението.",
+    categoriesTitle: "Категории", addCategoryBtn: "+ Нова категория",
+    categoriesHint: "Общ списък — използва се и за продуктите, и за отделите във фактурите.",
+    renameCategoryPrompt: "Ново име за „{name}“:",
+    deleteCategoryConfirm: "Изтриване на категорията „{name}“?",
+    categoryInUse: "„{name}“ се използва от {n}. Преместете ги в друга категория, преди да я изтриете.",
+    usedByProducts: "{n} продукта", usedByProduct: "1 продукт", categoryNotUsed: "не се използва",
     lineModeQty: "× цена", lineModeAmount: "обща сума", lineMode: "Начин на изчисление",
     amountPlaceholder: "сума",
     addRow: "+ Добави ред", taxBase: "Данъчна основа", vatLabel: "ДДС", removeTitle: "Премахни",
@@ -476,6 +491,12 @@ const TRANSLATIONS = {
     newCategoryOption: "+ New category…", newCategoryPrompt: "Name of the new category:",
     categoryExists: "Category \u201c{name}\u201d already exists.",
     categorySaveFailed: "The category could not be saved. Please try again in a moment. If it keeps happening, let whoever looks after the app know.",
+    categoriesTitle: "Categories", addCategoryBtn: "+ New category",
+    categoriesHint: "One shared list \u2014 used both for products and for the department lines on invoices.",
+    renameCategoryPrompt: "New name for \u201c{name}\u201d:",
+    deleteCategoryConfirm: "Delete the category \u201c{name}\u201d?",
+    categoryInUse: "\u201c{name}\u201d is used by {n}. Move them to another category before deleting it.",
+    usedByProducts: "{n} products", usedByProduct: "1 product", categoryNotUsed: "not used",
     lineModeQty: "× price", lineModeAmount: "flat amount", lineMode: "How this line is priced",
     amountPlaceholder: "amount",
     addRow: "+ Add row", taxBase: "Net amount", vatLabel: "VAT", removeTitle: "Remove",
@@ -640,7 +661,7 @@ function settingsRowToObj(row) {
     companyName: row.company_name || "", eik: row.eik || "", vatNumber: row.vat_number || "",
     address: row.address || "", mol: row.mol || "", iban: row.iban || "",
     nextInvoiceNo: row.next_invoice_no, nextOfferNo: row.next_offer_no, nextCreditNo: row.next_credit_no,
-    categories: Array.isArray(row.categories) ? row.categories : []
+    categories: row.categories == null ? [] : row.categories
   };
 }
 function settingsObjToRow(obj) {
@@ -1342,26 +1363,43 @@ function renderCustomers() {
 }
 
 // ---------- DOCUMENTS (invoices / offers) ----------
+// settings.categories holds either the original plain array of added names, or
+// the { custom, hidden } shape written since categories became editable. Reading
+// both means renaming and deleting needed no database migration.
+function catConfig() {
+  const v = state.settings.categories;
+  if (Array.isArray(v)) return { custom: v.slice(), hidden: [] };
+  if (v && typeof v === "object") {
+    return {
+      custom: Array.isArray(v.custom) ? v.custom.slice() : [],
+      hidden: Array.isArray(v.hidden) ? v.hidden.slice() : []
+    };
+  }
+  return { custom: [], hidden: [] };
+}
+function categoryUsage(name) { return state.products.filter(p => p.category === name).length; }
+// Bulgarian counts "1 продукт" but "2 продукта", so the singular is its own string.
+function usageLabel(n) { return n === 1 ? t("usedByProduct") : t("usedByProducts", { n }); }
+
 // One shared category list, used by both the product form and the department
 // lines on an invoice. Built-in names first, then whatever the shop added, then
 // any straggler still attached to a product (e.g. from an old import) so a
 // category in use never silently disappears from the picker.
 function allCategories() {
+  const { custom, hidden } = catConfig();
+  const inUse = state.products.map(p => p.category).filter(Boolean);
   const out = [], seen = new Set();
-  for (const c of [...CATEGORIES, ...(state.settings.categories || []), ...state.products.map(p => p.category)]) {
-    if (c && !seen.has(c)) { seen.add(c); out.push(c); }
+  for (const c of [...CATEGORIES, ...custom, ...inUse]) {
+    if (!c || seen.has(c)) continue;
+    // A removed built-in stays visible while products are still filed under it,
+    // so nothing drops out of the picker while it is genuinely in use.
+    if (hidden.includes(c) && !inUse.includes(c)) continue;
+    seen.add(c); out.push(c);
   }
   return out;
 }
-async function addCategory() {
-  const raw = prompt(t("newCategoryPrompt"));
-  if (raw == null) return null;
-  const name = raw.trim();
-  if (!name) return null;
-  const existing = allCategories().find(c => c.toLowerCase() === name.toLowerCase());
-  if (existing) { alert(t("categoryExists", { name: existing })); return existing; }
-  const next = [...(state.settings.categories || []), name];
-  const res = await supabaseClient.from("settings").update({ categories: next }).eq("owner_id", session.user.id).select().single();
+async function saveCategories(cfg) {
+  const res = await supabaseClient.from("settings").update({ categories: cfg }).eq("owner_id", session.user.id).select().single();
   if (res.error) {
     // The shop owner gets one plain sentence — the real reason (a missing column
     // after a schema change, a dropped connection) means nothing to them. It goes
@@ -1371,11 +1409,59 @@ async function addCategory() {
     // phone that element sits inside a closed menu anyway.
     console.error("saving category failed", res.error);
     alert(t("categorySaveFailed"));
-    return null;
+    return false;
   }
   state.settings = settingsRowToObj(res.data);
   cacheState();
-  return name;
+  return true;
+}
+async function addCategory() {
+  const raw = prompt(t("newCategoryPrompt"));
+  if (raw == null) return null;
+  const name = raw.trim();
+  if (!name) return null;
+  const existing = allCategories().find(c => c.toLowerCase() === name.toLowerCase());
+  if (existing) { alert(t("categoryExists", { name: existing })); return existing; }
+  const cfg = catConfig();
+  // Re-adding a built-in that was removed earlier just un-hides it, rather than
+  // stacking a duplicate copy into the custom list.
+  cfg.hidden = cfg.hidden.filter(c => c !== name);
+  if (!CATEGORIES.includes(name) && !cfg.custom.includes(name)) cfg.custom.push(name);
+  return (await saveCategories(cfg)) ? name : null;
+}
+async function renameCategory(oldName) {
+  const raw = prompt(t("renameCategoryPrompt", { name: categoryLabel(oldName) }), oldName);
+  if (raw == null) return;
+  const name = raw.trim();
+  if (!name || name === oldName) return;
+  const clash = allCategories().find(c => c.toLowerCase() === name.toLowerCase() && c !== oldName);
+  if (clash) { alert(t("categoryExists", { name: clash })); return; }
+  const cfg = catConfig();
+  if (CATEGORIES.includes(oldName)) { if (!cfg.hidden.includes(oldName)) cfg.hidden.push(oldName); }
+  else cfg.custom = cfg.custom.filter(c => c !== oldName);
+  cfg.hidden = cfg.hidden.filter(c => c !== name);
+  if (!CATEGORIES.includes(name) && !cfg.custom.includes(name)) cfg.custom.push(name);
+  // Products have to move with the rename, or the old name walks straight back
+  // into the list as an "in use" category.
+  if (categoryUsage(oldName)) {
+    const res = await supabaseClient.from("products").update({ category: name })
+      .eq("owner_id", session.user.id).eq("category", oldName);
+    if (res.error) { console.error("renaming category on products failed", res.error); alert(t("categorySaveFailed")); return; }
+  }
+  if (!await saveCategories(cfg)) return;
+  // Documents keep the name they were issued with — an invoice already given to
+  // a customer is a record, not something a later rename should rewrite.
+  await refetchTable("products");
+  render();
+}
+async function deleteCategory(name) {
+  const used = categoryUsage(name);
+  if (used) { alert(t("categoryInUse", { name: categoryLabel(name), n: usageLabel(used) })); return; }
+  if (!confirm(t("deleteCategoryConfirm", { name: categoryLabel(name) }))) return;
+  const cfg = catConfig();
+  if (CATEGORIES.includes(name)) { if (!cfg.hidden.includes(name)) cfg.hidden.push(name); }
+  else cfg.custom = cfg.custom.filter(c => c !== name);
+  if (await saveCategories(cfg)) render();
 }
 
 function emptyLineItem() { return { id: uid(), productId: "", category: "", name: "", unit: "", qty: 1, price: 0, amountMode: false }; }
@@ -2134,8 +2220,38 @@ function renderSettings() {
         : `<div class="savebar"><button ${offline ? "disabled" : ""} onclick="editSettings()">${t("edit")}</button></div>`}
     </div>
     <p class="muted">${t("accountantHint")}</p>
+    ${renderCategoriesCard()}
   `;
 }
+
+// The one shared list, managed in one place. Built-in and added categories are
+// treated the same here on purpose — from the shop's side there is no reason
+// "Сладки" should be less removable than something they typed themselves.
+function renderCategoriesCard() {
+  return `
+    <div class="card">
+      <h3 style="margin-top:0;">${t("categoriesTitle")}</h3>
+      <p class="muted" style="margin-top:0;">${t("categoriesHint")}</p>
+      ${allCategories().map(c => {
+        const used = categoryUsage(c);
+        const arg = esc(c).replace(/'/g, "\\'");
+        return `
+        <div class="cat-row">
+          <div>
+            <div>${esc(categoryLabel(c))}</div>
+            <div class="muted" style="font-size:12px;">${used ? usageLabel(used) : t("categoryNotUsed")}</div>
+          </div>
+          <div style="white-space:nowrap;">
+            <button ${offline ? "disabled" : ""} onclick="renameCategory('${arg}')">${t("edit")}</button>
+            <button class="danger" ${offline ? "disabled" : ""} onclick="deleteCategory('${arg}')">${t("del")}</button>
+          </div>
+        </div>`;
+      }).join("")}
+      <button ${offline ? "disabled" : ""} onclick="addCategoryFromSettings()" style="margin-top:8px;">${t("addCategoryBtn")}</button>
+    </div>
+  `;
+}
+async function addCategoryFromSettings() { await addCategory(); render(); }
 
 // ---------- BACKUP / DATA ----------
 function downloadBackup() {

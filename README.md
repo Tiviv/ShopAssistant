@@ -79,9 +79,24 @@ quantity, so you can return €12.50 of a €20.00 line.
 Departments are **the same list as product categories** — one list, used in
 both places. It starts as the seven built-in categories and grows: pick
 "+ Нова категория…" in either the product form or an invoice line to add one,
-and it is immediately available in both. Custom categories are stored per
-account and show exactly as typed in both languages, since they are your words
-rather than part of the interface.
+and it is immediately available in both. Added categories show exactly as
+typed in both languages, since they are your words rather than part of the
+interface.
+
+The full list is managed under **Настройки → Категории**, where each entry can
+be renamed or removed — built-in ones included, since there is no reason a shop
+that never sells sweets should be stuck with "Сладки". Three rules keep that
+from losing data:
+
+- **Renaming moves the products with it.** Every product filed under the old
+  name is updated in the same step, so the old name cannot reappear in the list
+  as a still-in-use category.
+- **A category in use cannot be deleted.** The app says how many products are
+  filed under it; move them first.
+- **Documents already issued keep the wording they were issued with.** A rename
+  today does not rewrite an invoice from last month — that is a record, not a
+  label. Old invoices therefore still show the old department name, which is
+  intended.
 
 ### Language
 
