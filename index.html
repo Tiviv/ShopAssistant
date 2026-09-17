@@ -99,7 +99,7 @@
   .pill.unpaid { background: var(--warning-bg); color: var(--warning); }
   .badge-low { color: var(--danger); }
   .actions-cell { display: flex; gap: 6px; justify-content: flex-end; }
-  .item-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 30px; gap: 8px; margin-bottom: 6px; align-items: center; }
+  .item-row { display: grid; grid-template-columns: 2fr 0.9fr 0.9fr 0.9fr 1.1fr 30px; gap: 8px; margin-bottom: 6px; align-items: center; }
   .print-sheet { background: white; color: #111; padding: 2rem; max-width: 700px; margin: 0 auto; border: 1px solid #ddd; }
   .print-sheet table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .print-sheet th, .print-sheet td { padding: 6px 4px; text-align: right; }
@@ -328,7 +328,12 @@ const TRANSLATIONS = {
     searchDocs: "Търсене по номер, клиент или дата…",
     paidPill: "Платена", waitingPill: "Чака", towardsNo: "към № {n}", creditPrefix: "КИ № {n}",
     noRegisteredCustomer: "Без регистриран клиент", vatRate: "ДДС ставка", paymentMethod: "Начин на плащане",
-    product: "Продукт", chooseProduct: "— избери продукт —", qty: "Кол-во", unitPlaceholder: "мярка",
+    product: "Продукт / Отдел", chooseProduct: "— избери продукт или отдел —", qty: "Кол-во", unitPlaceholder: "мярка",
+    productsGroup: "Продукти", departmentsGroup: "Отдели",
+    newCategoryOption: "+ Нова категория…", newCategoryPrompt: "Име на новата категория:",
+    categoryExists: "Категорията „{name}“ вече съществува.",
+    lineModeQty: "× цена", lineModeAmount: "обща сума", lineMode: "Начин на изчисление",
+    amountPlaceholder: "сума",
     addRow: "+ Добави ред", taxBase: "Данъчна основа", vatLabel: "ДДС", removeTitle: "Премахни",
     saveChanges: "Запази промените", editDocTitle: "Редакция на {type} № {n}",
     editDocHelp: "Номерът остава същият. Наличностите се преизчисляват спрямо промените.",
@@ -465,7 +470,12 @@ const TRANSLATIONS = {
     searchDocs: "Search by number, customer or date…",
     paidPill: "Paid", waitingPill: "Pending", towardsNo: "for No. {n}", creditPrefix: "CN No. {n}",
     noRegisteredCustomer: "No registered customer", vatRate: "VAT rate", paymentMethod: "Payment method",
-    product: "Product", chooseProduct: "— choose a product —", qty: "Qty", unitPlaceholder: "unit",
+    product: "Product / Department", chooseProduct: "— choose a product or department —", qty: "Qty", unitPlaceholder: "unit",
+    productsGroup: "Products", departmentsGroup: "Departments",
+    newCategoryOption: "+ New category…", newCategoryPrompt: "Name of the new category:",
+    categoryExists: "Category \u201c{name}\u201d already exists.",
+    lineModeQty: "× price", lineModeAmount: "flat amount", lineMode: "How this line is priced",
+    amountPlaceholder: "amount",
     addRow: "+ Add row", taxBase: "Net amount", vatLabel: "VAT", removeTitle: "Remove",
     saveChanges: "Save changes", editDocTitle: "Editing {type} No. {n}",
     editDocHelp: "The number stays the same. Stock is recalculated against your changes.",
@@ -549,7 +559,8 @@ function tIn(l, key, params) {
 function t(key, params) { return tIn(lang, key, params); }
 function unitLabelIn(l, u) { const k = "unit_" + u; return (TRANSLATIONS[l] && TRANSLATIONS[l][k]) || u; }
 function unitLabel(u) { return unitLabelIn(lang, u); }
-function categoryLabel(c) { const k = "cat_" + c; return (TRANSLATIONS[lang] && TRANSLATIONS[lang][k]) || c; }
+function categoryLabelIn(l, c) { const k = "cat_" + c; return (TRANSLATIONS[l] && TRANSLATIONS[l][k]) || c; }
+function categoryLabel(c) { return categoryLabelIn(lang, c); }
 function paymentLabelIn(l, m) { return tIn(l, "pay_" + (m || "cash")); }
 function paymentLabel(m) { return paymentLabelIn(lang, m); }
 function setLang(next) {
@@ -609,7 +620,7 @@ function fieldError(errs, key) { return errs[key] ? `<div class="field-error">${
 
 function defaultState() {
   return {
-    settings: { companyName: "", eik: "", vatNumber: "", address: "", mol: "", iban: "", nextInvoiceNo: 1, nextOfferNo: 1, nextCreditNo: 1 },
+    settings: { companyName: "", eik: "", vatNumber: "", address: "", mol: "", iban: "", nextInvoiceNo: 1, nextOfferNo: 1, nextCreditNo: 1, categories: [] },
     products: [],
     customers: [],
     documents: [],
@@ -626,7 +637,8 @@ function settingsRowToObj(row) {
   return {
     companyName: row.company_name || "", eik: row.eik || "", vatNumber: row.vat_number || "",
     address: row.address || "", mol: row.mol || "", iban: row.iban || "",
-    nextInvoiceNo: row.next_invoice_no, nextOfferNo: row.next_offer_no, nextCreditNo: row.next_credit_no
+    nextInvoiceNo: row.next_invoice_no, nextOfferNo: row.next_offer_no, nextCreditNo: row.next_credit_no,
+    categories: Array.isArray(row.categories) ? row.categories : []
   };
 }
 function settingsObjToRow(obj) {
@@ -1203,7 +1215,7 @@ function renderProducts() {
     <div class="card">
       <div class="grid" style="grid-template-columns: 2fr 1fr 1fr 1fr 1fr;">
         <div class="field-wrap ${productErrors.name ? 'has-error' : ''}"><label class="field">${t("name")}</label><input value="${esc(editingProduct.name)}" oninput="updateProductField('name', this.value)" placeholder="${t("productNamePlaceholder")}">${fieldError(productErrors, "name")}</div>
-        <div class="field-wrap"><label class="field">${t("category")}</label><select onchange="updateProductField('category', this.value)">${CATEGORIES.map(c => `<option value="${c}" ${editingProduct.category === c ? "selected" : ""}>${categoryLabel(c)}</option>`).join("")}</select></div>
+        <div class="field-wrap"><label class="field">${t("category")}</label><select onchange="pickProductCategory(this.value)">${allCategories().map(c => `<option value="${esc(c)}" ${editingProduct.category === c ? "selected" : ""}>${esc(categoryLabel(c))}</option>`).join("")}<option value="__new__">${t("newCategoryOption")}</option></select></div>
         <div class="field-wrap"><label class="field">${t("unit")}</label><select onchange="updateProductField('unit', this.value)">${UNITS.map(u => `<option value="${u}" ${editingProduct.unit === u ? "selected" : ""}>${unitLabel(u)}</option>`).join("")}</select></div>
         <div class="field-wrap ${productErrors.price ? 'has-error' : ''}"><label class="field">${t("priceEur")}</label><input type="number" step="0.01" value="${esc(editingProduct.price)}" oninput="updateProductField('price', this.value)">${fieldError(productErrors, "price")}</div>
         <div class="field-wrap ${productErrors.stock ? 'has-error' : ''}"><label class="field">${t("stock")}</label><input type="number" step="0.01" value="${esc(editingProduct.stock)}" oninput="updateProductField('stock', this.value)">${fieldError(productErrors, "stock")}</div>
@@ -1328,7 +1340,33 @@ function renderCustomers() {
 }
 
 // ---------- DOCUMENTS (invoices / offers) ----------
-function emptyLineItem() { return { id: uid(), productId: "", name: "", unit: "", qty: 1, price: 0 }; }
+// One shared category list, used by both the product form and the department
+// lines on an invoice. Built-in names first, then whatever the shop added, then
+// any straggler still attached to a product (e.g. from an old import) so a
+// category in use never silently disappears from the picker.
+function allCategories() {
+  const out = [], seen = new Set();
+  for (const c of [...CATEGORIES, ...(state.settings.categories || []), ...state.products.map(p => p.category)]) {
+    if (c && !seen.has(c)) { seen.add(c); out.push(c); }
+  }
+  return out;
+}
+async function addCategory() {
+  const raw = prompt(t("newCategoryPrompt"));
+  if (raw == null) return null;
+  const name = raw.trim();
+  if (!name) return null;
+  const existing = allCategories().find(c => c.toLowerCase() === name.toLowerCase());
+  if (existing) { alert(t("categoryExists", { name: existing })); return existing; }
+  const next = [...(state.settings.categories || []), name];
+  const res = await supabaseClient.from("settings").update({ categories: next }).eq("owner_id", session.user.id).select().single();
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return null; }
+  state.settings = settingsRowToObj(res.data);
+  cacheState();
+  return name;
+}
+
+function emptyLineItem() { return { id: uid(), productId: "", category: "", name: "", unit: "", qty: 1, price: 0, amountMode: false }; }
 
 function newDoc(docType) {
   docForm = { docType, date: todayStr(), customerId: "", customerName: "", items: [emptyLineItem()], vatRate: 20, paid: false, paymentMethod: "cash" };
@@ -1356,20 +1394,67 @@ function editDoc(id) {
 }
 function cancelDocForm() { docForm = null; render(); }
 function updateDocField(field, value) { docForm[field] = field === "vatRate" ? Number(value) : value; renderDocFormTotalsOnly(); }
+async function pickProductCategory(value) {
+  if (value === "__new__") {
+    const name = await addCategory();
+    if (name) editingProduct.category = name;
+    render();
+    return;
+  }
+  editingProduct.category = value;
+}
 function addDocItem() { docForm.items.push(emptyLineItem()); render(); }
 function removeDocItem(idx) { docForm.items.splice(idx, 1); render(); }
 function updateItemField(idx, field, value) { docForm.items[idx][field] = value; renderDocFormTotalsOnly(); }
-function pickProduct(idx, productId) {
-  const prod = state.products.find(p => p.id === productId);
-  docForm.items[idx].productId = productId;
-  if (prod) {
-    docForm.items[idx].name = prod.name;
-    docForm.items[idx].unit = prod.unit;
-    docForm.items[idx].price = Number(prod.price) || 0;
-    document.getElementById(`item-unit-${idx}`).value = prod.unit;
-    document.getElementById(`item-price-${idx}`).value = prod.price;
+// A line is either a specific product ("p:<id>") or a whole department
+// ("c:<category>"). Department lines carry no productId, so they never move
+// stock — there is no single product to decrement for "20kg of fruit".
+async function pickLineSource(idx, value) {
+  const it = docForm.items[idx];
+  if (value === "__new__") {
+    const name = await addCategory();
+    if (!name) { render(); return; }
+    setCategoryLine(it, name);
+    render();
+    return;
   }
-  renderDocFormTotalsOnly();
+  if (value.startsWith("c:")) {
+    setCategoryLine(it, value.slice(2));
+    render();
+    return;
+  }
+  const productId = value.startsWith("p:") ? value.slice(2) : "";
+  const prod = state.products.find(p => p.id === productId);
+  it.productId = productId;
+  it.category = "";
+  it.amountMode = false;
+  if (prod) {
+    it.name = prod.name;
+    it.unit = prod.unit;
+    it.price = Number(prod.price) || 0;
+  } else {
+    it.name = "";
+  }
+  render();
+}
+function setCategoryLine(it, category) {
+  it.productId = "";
+  it.category = category;
+  it.name = category;
+  if (!it.amountMode && !it.unit) it.unit = "";
+}
+function setLineMode(idx, mode) {
+  const it = docForm.items[idx];
+  it.amountMode = mode === "amount";
+  // A flat-amount line is stored as qty 1 x price, so every total, credit note
+  // and printout downstream keeps working on the same two numbers.
+  if (it.amountMode) { it.qty = 1; it.unit = ""; }
+  render();
+}
+function lineSourceValue(it) {
+  if (it.productId) return "p:" + it.productId;
+  if (it.category) return "c:" + it.category;
+  return "";
 }
 function computeDocTotals() {
   const subtotal = docForm.items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.price) || 0), 0);
@@ -1482,6 +1567,19 @@ function beginCreditNote(invoiceId) {
 }
 function cancelCreditForm() { creditForm = null; creditFormError = ""; render(); }
 function updateCreditQty(idx, value) { creditForm.items[idx].creditQty = value; renderCreditFormTotalsOnly(); }
+// A flat-amount line has no meaningful quantity, so it is credited by amount:
+// the figure typed here is divided back into the qty x price the rest of the
+// credit-note math already works on (qty is 1 on such a line, so it round-trips).
+function creditAmountOf(it) {
+  const q = Number(it.creditQty);
+  return isValidMoney(it.creditQty) ? +(q * Number(it.price)).toFixed(2) : it.creditQty;
+}
+function updateCreditAmount(idx, value) {
+  const it = creditForm.items[idx];
+  const price = Number(it.price) || 0;
+  it.creditQty = price ? String(Number(value) / price) : "0";
+  renderCreditFormTotalsOnly();
+}
 function computeCreditTotals() {
   const invoice = state.documents.find(d => d.id === creditForm.invoiceId);
   const selected = creditForm.items.filter(it => isValidMoney(it.creditQty) && Number(it.creditQty) > 0);
@@ -1660,19 +1758,35 @@ function renderDocForm() {
           </div>
         ` : ""}
       </div>
-      <div class="item-row" style="font-size:12px; color: var(--text-muted);"><span>${t("product")}</span><span>${t("unit")}</span><span>${t("qty")}</span><span>${t("price")}</span><span></span></div>
-      ${docForm.items.map((it, idx) => `
+      <div class="item-row" style="font-size:12px; color: var(--text-muted);"><span>${t("product")}</span><span>${t("unit")}</span><span>${t("qty")}</span><span>${t("price")}</span><span></span><span></span></div>
+      ${docForm.items.map((it, idx) => {
+        const src = lineSourceValue(it);
+        return `
         <div class="item-row">
-          <select onchange="pickProduct(${idx}, this.value)">
-            <option value="">${t("chooseProduct")}</option>
-            ${state.products.map(p => `<option value="${p.id}" ${it.productId === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+          <select onchange="pickLineSource(${idx}, this.value)">
+            <option value="" ${src === "" ? "selected" : ""}>${t("chooseProduct")}</option>
+            <optgroup label="${t("productsGroup")}">
+              ${state.products.map(p => `<option value="p:${p.id}" ${src === "p:" + p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+            </optgroup>
+            <optgroup label="${t("departmentsGroup")}">
+              ${allCategories().map(c => `<option value="c:${esc(c)}" ${src === "c:" + c ? "selected" : ""}>${esc(categoryLabel(c))}</option>`).join("")}
+            </optgroup>
+            <option value="__new__">${t("newCategoryOption")}</option>
           </select>
-          <input id="item-unit-${idx}" value="${esc(it.unit)}" oninput="updateItemField(${idx}, 'unit', this.value)" placeholder="${t('unitPlaceholder')}">
-          <input id="item-qty-${idx}" type="number" step="0.01" value="${esc(it.qty)}" oninput="updateItemField(${idx}, 'qty', this.value)">
-          <input id="item-price-${idx}" type="number" step="0.01" value="${esc(it.price)}" oninput="updateItemField(${idx}, 'price', this.value)">
+          ${it.amountMode
+            ? `<span class="muted" style="font-size:12px;">—</span><span class="muted" style="font-size:12px;">—</span>`
+            : `<input id="item-unit-${idx}" value="${esc(it.unit)}" oninput="updateItemField(${idx}, 'unit', this.value)" placeholder="${t('unitPlaceholder')}">
+               <input id="item-qty-${idx}" type="number" step="0.01" value="${esc(it.qty)}" oninput="updateItemField(${idx}, 'qty', this.value)">`}
+          <input id="item-price-${idx}" type="number" step="0.01" value="${esc(it.price)}" oninput="updateItemField(${idx}, 'price', this.value)" placeholder="${it.amountMode ? t('amountPlaceholder') : ''}">
+          ${it.category
+            ? `<select onchange="setLineMode(${idx}, this.value)" title="${t('lineMode')}" style="font-size:12px;">
+                 <option value="qty" ${!it.amountMode ? "selected" : ""}>${t("lineModeQty")}</option>
+                 <option value="amount" ${it.amountMode ? "selected" : ""}>${t("lineModeAmount")}</option>
+               </select>`
+            : `<span></span>`}
           <button onclick="removeDocItem(${idx})" title="${t('removeTitle')}">×</button>
         </div>
-      `).join("")}
+      `;}).join("")}
       <button onclick="addDocItem()" style="margin: 6px 0 12px;">${t("addRow")}</button>
       <div id="doc-totals" style="text-align:right; margin-bottom: 10px;">
         <div>${t("taxBase")}: ${money(tot.subtotal)}</div>
@@ -1698,10 +1812,14 @@ function renderCreditForm() {
       </div>
       ${creditForm.items.map((it, idx) => `
         <div class="item-row" style="grid-template-columns: 2fr 1fr 1fr 1fr;">
-          <span>${esc(it.name)}</span>
-          <span class="muted">${it.qty} ${esc(unitLabel(it.unit))}</span>
-          <input type="number" step="0.01" min="0" max="${it.qty}" value="${esc(it.creditQty)}" oninput="updateCreditQty(${idx}, this.value)">
-          <span class="muted">${money(it.price)}</span>
+          <span>${esc(it.category ? categoryLabel(it.category) : it.name)}</span>
+          ${it.amountMode
+            ? `<span class="muted">${money(it.price)}</span>
+               <input type="number" step="0.01" min="0" max="${it.price}" value="${esc(creditAmountOf(it))}" oninput="updateCreditAmount(${idx}, this.value)">
+               <span class="muted">—</span>`
+            : `<span class="muted">${it.qty} ${esc(unitLabel(it.unit))}</span>
+               <input type="number" step="0.01" min="0" max="${it.qty}" value="${esc(it.creditQty)}" oninput="updateCreditQty(${idx}, this.value)">
+               <span class="muted">${money(it.price)}</span>`}
         </div>
       `).join("")}
       <div id="credit-totals" style="text-align:right; margin: 10px 0;">
@@ -1768,10 +1886,10 @@ function renderPrintable(doc) {
         <tbody>
           ${doc.items.filter(it => it.name).map(it => `
             <tr>
-              <td>${esc(it.name)}</td>
-              <td>${esc(unitLabelIn(dl, it.unit))}</td>
-              <td>${it.qty}</td>
-              <td>${m(it.price)}</td>
+              <td>${esc(it.category ? categoryLabelIn(dl, it.category) : it.name)}</td>
+              <td>${it.amountMode ? "" : esc(unitLabelIn(dl, it.unit))}</td>
+              <td>${it.amountMode ? "" : it.qty}</td>
+              <td>${it.amountMode ? "" : m(it.price)}</td>
               <td>${m((Number(it.qty) || 0) * (Number(it.price) || 0))}</td>
             </tr>
           `).join("")}

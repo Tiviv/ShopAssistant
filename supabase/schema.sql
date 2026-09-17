@@ -68,6 +68,12 @@ create table if not exists public.documents (
   created_at timestamptz not null default now()
 );
 
+-- Custom product/department categories the shop added on top of the built-in
+-- list. One shared list: the same names appear in the product form and in the
+-- department lines on an invoice. Built-in categories are not stored here —
+-- only additions — so the defaults stay translatable.
+alter table public.settings add column if not exists categories jsonb not null default '[]'::jsonb;
+
 -- "create table if not exists" above is a no-op if the table already exists
 -- (i.e. on a database that ran a previous version of this schema), so the
 -- new column needs its own idempotent statement to actually land there too.

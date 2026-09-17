@@ -57,6 +57,32 @@ This version fixes both by moving storage to a Supabase project:
    from before — or an old backup exported from `legacy-offline/index.html`,
    to migrate existing data in.
 
+### Invoicing by department
+
+A line on an invoice or quote can be a **whole department** instead of a
+specific product — "Плодове, 20 кг" or a flat "Други — 20,00 €". The picker on
+each line lists your products first and your departments below them, so one
+invoice can mix both freely.
+
+Each department line is priced one of two ways, chosen on the line itself:
+
+- **× цена** — unit, quantity and unit price, exactly like a product line.
+- **обща сума** — a single amount, with no quantity. On the printed sheet such
+  a line shows only the description and the amount, leaving unit, quantity and
+  unit price blank.
+
+Department lines deliberately **do not move stock**: there is no single product
+to decrement for "20 kg of fruit". Product lines still do, as before. Credit
+notes handle both — a flat-amount line is credited by amount rather than by
+quantity, so you can return €12.50 of a €20.00 line.
+
+Departments are **the same list as product categories** — one list, used in
+both places. It starts as the seven built-in categories and grows: pick
+"+ Нова категория…" in either the product form or an invoice line to add one,
+and it is immediately available in both. Custom categories are stored per
+account and show exactly as typed in both languages, since they are your words
+rather than part of the interface.
+
 ### Language
 
 Every screen is translated. The toggle sits in the top-right of the
