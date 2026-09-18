@@ -97,6 +97,17 @@ create table if not exists public.cash_closings (
   primary key (owner_id, date)
 );
 
+-- Closing a day stores that day's sums next to the counted cash, so a closed
+-- day keeps the figures it was closed on even if an invoice for that date is
+-- edited afterwards. Nullable on purpose: a day closed before these columns
+-- existed has no snapshot, and the app recounts it live instead of showing 0.
+alter table public.cash_closings add column if not exists total_cash numeric(12,2);
+alter table public.cash_closings add column if not exists total_card numeric(12,2);
+alter table public.cash_closings add column if not exists total_bank numeric(12,2);
+alter table public.cash_closings add column if not exists total numeric(12,2);
+alter table public.cash_closings add column if not exists invoice_count int;
+alter table public.cash_closings add column if not exists entry_count int;
+
 -- Walk-in / cash-register sales that never go through the invoice flow
 -- (e.g. a private individual buying in person). Each row is one manual
 -- till entry for a day, counted toward that day's expected cash/card/bank
