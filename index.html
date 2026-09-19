@@ -396,6 +396,8 @@ const TRANSLATIONS = {
     enterValidAmount: "Въведете валидна сума (число > 0).", enterValidCounted: "Въведете валидна преброена сума (число ≥ 0).",
     entryNotePlaceholder: "напр. клиент на място",
     dayClosedAt: "Денят е приключен на {when}.",
+    autoClosedAt: "Денят е приключен автоматично на {when}.",
+    notCounted: "Касата не е броена за този ден. Отключете деня, ако искате да впишете преброената сума.",
     savedAtClosing: "Сумите отдолу са записани при приключването и вече не се променят.",
     totalCash: "Оборот в брой", totalCard: "Оборот с карта", totalBank: "Оборот по банка",
     totalForDay: "Общо за деня ({inv}, {ret})",
@@ -556,6 +558,8 @@ const TRANSLATIONS = {
     enterValidAmount: "Enter a valid amount (number > 0).", enterValidCounted: "Enter a valid counted amount (number ≥ 0).",
     entryNotePlaceholder: "e.g. walk-in customer",
     dayClosedAt: "Day closed on {when}.",
+    autoClosedAt: "Day closed automatically on {when}.",
+    notCounted: "The till wasn't counted for this day. Reopen it if you want to enter the counted amount.",
     savedAtClosing: "The totals below were saved when the day was closed and no longer change.",
     totalCash: "Cash turnover", totalCard: "Card turnover", totalBank: "Bank turnover",
     totalForDay: "Total for the day ({inv}, {ret})",
@@ -727,6 +731,7 @@ function cashClosingRowToObj(row) {
   // those fall back to a live recount in dayTotals().
   return {
     date: row.date, countedCash: Number(row.counted_cash), note: row.note || "", closedAt: row.closed_at,
+    autoClosed: !!row.auto_closed,
     totals: row.total == null ? null : {
       byMethod: { cash: Number(row.total_cash) || 0, card: Number(row.total_card) || 0, bank: Number(row.total_bank) || 0 },
       total: Number(row.total) || 0,
@@ -865,10 +870,25 @@ async function boot() {
   if (session && !recoveryMode) { await loadAllData(); } else { render(); }
 }
 
+// A day that ended without anyone closing it. The scheduled job in the
+// database closes those overnight; asking for it here as well means forgotten
+// days still get closed on a project where pg_cron could not be enabled. It
+// only ever adds closings for days that are already over, so calling it on
+// every load is safe, and an older database without the function just carries
+// on without auto-closing.
+async function closeForgottenDays() {
+  try {
+    const res = await supabaseClient.rpc("close_my_finished_days");
+    if (res.error) console.warn("Auto-close unavailable:", res.error.message);
+  } catch (e) {
+    console.warn("Auto-close unavailable:", e);
+  }
+}
 async function loadAllData() {
   syncStatus = "syncing"; render();
   try {
     const uidUser = session.user.id;
+    await closeForgottenDays();
     const [settingsRes, productsRes, customersRes, docsRes, cashRes, entriesRes] = await Promise.all([
       supabaseClient.from("settings").select("*").eq("owner_id", uidUser).maybeSingle(),
       supabaseClient.from("products").select("*").eq("owner_id", uidUser).order("name"),
@@ -2129,7 +2149,8 @@ async function saveCashClosing() {
     owner_id: session.user.id, date: cashViewDate,
     counted_cash: Number(cashForm.countedCash), note: cashForm.note || "", closed_at: new Date().toISOString(),
     total_cash: totals.byMethod.cash, total_card: totals.byMethod.card, total_bank: totals.byMethod.bank,
-    total: totals.total, invoice_count: totals.invoiceCount, entry_count: totals.entryCount
+    total: totals.total, invoice_count: totals.invoiceCount, entry_count: totals.entryCount,
+    auto_closed: false
   };
   const res = await supabaseClient.from("cash_closings").upsert(row, { onConflict: "owner_id,date" }).select().single();
   if (res.error) { flashSaved(false, isMissingColumnError(res.error) ? t("closingNeedsSchema") : t("errorPrefix") + res.error.message); return; }
@@ -2165,7 +2186,7 @@ function renderCash() {
     <h2>${t("cashTitle")}</h2>
     <div class="card">
       <div class="field-wrap" style="max-width:220px;"><label class="field">${t("day")}</label><input type="date" value="${cashViewDate}" onchange="updateCashViewDate(this.value)"></div>
-      ${closed ? `<p>${t("dayClosedAt", { when: esc(dateTime(closing.closedAt)) })}<br><span class="muted">${t("savedAtClosing")}</span></p>` : ""}
+      ${closed ? `<p>${t(closing.autoClosed ? "autoClosedAt" : "dayClosedAt", { when: esc(dateTime(closing.closedAt)) })}<br><span class="muted">${t("savedAtClosing")}</span></p>` : ""}
       <div class="metrics-grid">
         <div class="metric"><div class="label">${closed ? t("totalCash") : t("expectedCash")}</div><div class="value">${money(totals.byMethod.cash)}</div></div>
         <div class="metric"><div class="label">${closed ? t("totalCard") : t("expectedCard")}</div><div class="value">${money(totals.byMethod.card)}</div></div>
@@ -2178,7 +2199,9 @@ function renderCash() {
         ${liveDiff !== null ? `<p>${t("diffVsExpected")}${diffLabel(liveDiff)}</p>` : ""}
         <div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveCashClosing()">${t("saveClosing")}</button><button onclick="cancelCashEdit()">${t("cancel")}</button></div>
       ` : closed ? `
-        <p>${t("countedInCash")}<b>${money(closing.countedCash)}</b> — ${t("difference")}${diffLabel(closing.countedCash - totals.byMethod.cash)}</p>
+        ${closing.autoClosed
+          ? `<p class="muted">${t("notCounted")}</p>`
+          : `<p>${t("countedInCash")}<b>${money(closing.countedCash)}</b> — ${t("difference")}${diffLabel(closing.countedCash - totals.byMethod.cash)}</p>`}
         ${closing.note ? `<p class="muted">${esc(closing.note)}</p>` : ""}
         <button ${offline ? "disabled" : ""} onclick="reopenDay()">${t("reopenDay")}</button>
       ` : future ? `
@@ -2236,8 +2259,8 @@ function renderCash() {
             <td data-label="${t("date")}">${c.date}</td>
             <td data-label="${t("totalCol")}">${money(dt.total)}</td>
             <td data-label="${t("totalCash")}">${money(dt.byMethod.cash)}</td>
-            <td data-label="${t("countedCol")}">${money(c.countedCash)}</td>
-            <td data-label="${t("diffCol")}">${diffLabel(c.countedCash - dt.byMethod.cash)}</td>
+            <td class="${c.autoClosed ? "muted" : ""}" data-label="${t("countedCol")}">${c.autoClosed ? "—" : money(c.countedCash)}</td>
+            <td data-label="${t("diffCol")}">${c.autoClosed ? `<span class="muted">—</span>` : diffLabel(c.countedCash - dt.byMethod.cash)}</td>
           </tr>`;
         }).join("")}
       </tbody>

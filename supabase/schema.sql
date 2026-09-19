@@ -108,6 +108,11 @@ alter table public.cash_closings add column if not exists total numeric(12,2);
 alter table public.cash_closings add column if not exists invoice_count int;
 alter table public.cash_closings add column if not exists entry_count int;
 
+-- Set on a day nobody closed by hand, which the scheduled job in section 7
+-- closed on its own. The till was never counted on such a day, so the app
+-- shows "not counted" rather than a difference against counted_cash = 0.
+alter table public.cash_closings add column if not exists auto_closed boolean not null default false;
+
 -- Walk-in / cash-register sales that never go through the invoice flow
 -- (e.g. a private individual buying in person). Each row is one manual
 -- till entry for a day, counted toward that day's expected cash/card/bank
@@ -289,4 +294,124 @@ do $$
 begin
   alter publication supabase_realtime add table public.cash_entries;
 exception when duplicate_object then null;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- 7. Closing a forgotten day on its own
+-- ---------------------------------------------------------------------
+-- A day nobody closes is a day whose takings were never written down, and
+-- whose figures keep drifting as old invoices are edited. These functions
+-- close any finished day that still has no closing, with exactly the sums the
+-- Каса tab would have saved. counted_cash stays 0 and auto_closed marks the
+-- row, so the app can say the till wasn't counted instead of inventing a
+-- difference; reopening the day in the app removes the row and lets it be
+-- closed by hand.
+
+-- The shop's own calendar day decides whether a day is over. The database runs
+-- in UTC, which is already the next day for part of every evening here.
+create or replace function public.shop_today()
+returns date
+language sql
+stable
+as $$ select (now() at time zone 'Europe/Sofia')::date $$;
+
+create or replace function public.close_finished_days(p_owner uuid)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_closed int;
+begin
+  with activity as (
+    select d.date, d.payment_method, d.total as amount,
+           case when d.doc_type = 'invoice' then 1 else 0 end as invoices, 0 as entries
+      from documents d
+      where d.owner_id = p_owner and d.doc_type in ('invoice', 'credit')
+    union all
+    select e.date, e.payment_method, e.amount, 0, 1
+      from cash_entries e
+      where e.owner_id = p_owner
+  ),
+  sums as (
+    select a.date,
+           coalesce(sum(a.amount) filter (where a.payment_method = 'cash'), 0) as total_cash,
+           coalesce(sum(a.amount) filter (where a.payment_method = 'card'), 0) as total_card,
+           coalesce(sum(a.amount) filter (where a.payment_method = 'bank'), 0) as total_bank,
+           coalesce(sum(a.amount), 0) as total,
+           sum(a.invoices) as invoice_count,
+           sum(a.entries) as entry_count
+      from activity a
+      where a.date < public.shop_today()
+      group by a.date
+  )
+  insert into cash_closings (owner_id, date, counted_cash, note, closed_at,
+                             total_cash, total_card, total_bank, total,
+                             invoice_count, entry_count, auto_closed)
+  select p_owner, s.date, 0, '', now(),
+         s.total_cash, s.total_card, s.total_bank, s.total,
+         s.invoice_count, s.entry_count, true
+    from sums s
+  on conflict (owner_id, date) do nothing;
+
+  get diagnostics v_closed = row_count;
+  return v_closed;
+end;
+$$;
+
+-- What the app calls when it opens, so forgotten days still get closed on a
+-- project where pg_cron can't be enabled.
+create or replace function public.close_my_finished_days()
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then return 0; end if;
+  return public.close_finished_days(auth.uid());
+end;
+$$;
+
+-- What the scheduled job calls: every shop on this project.
+create or replace function public.close_all_finished_days()
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_owner uuid;
+  v_closed int := 0;
+begin
+  for v_owner in select owner_id from settings loop
+    v_closed := v_closed + public.close_finished_days(v_owner);
+  end loop;
+  return v_closed;
+end;
+$$;
+
+-- The two above take an owner, or loop over every owner, so neither may be
+-- reachable from a browser: PostgREST publishes every function in "public",
+-- and one shop must never be able to close another shop's days.
+revoke all on function public.close_finished_days(uuid) from public, anon, authenticated;
+revoke all on function public.close_all_finished_days() from public, anon, authenticated;
+-- The app's own entry point is for a signed-in shop only. Postgres grants
+-- execute to PUBLIC by default, so it has to be taken away before granting it
+-- to the one role that should have it.
+revoke all on function public.close_my_finished_days() from public, anon, authenticated;
+grant execute on function public.close_my_finished_days() to authenticated;
+
+-- The scheduled run. Hourly rather than once at midnight, so an hour the job
+-- missed (or a project that was paused) still catches up: closing is
+-- idempotent, since "on conflict do nothing" leaves an already-closed day
+-- exactly as it is, and only days before the shop's today are touched.
+do $$
+begin
+  execute 'create extension if not exists pg_cron with schema extensions';
+  perform cron.schedule('shopassistant-close-finished-days', '5 * * * *',
+                        'select public.close_all_finished_days();');
+exception when others then
+  raise notice 'pg_cron is not available here (%) — the app will close forgotten days when it is next opened instead.', sqlerrm;
 end $$;
