@@ -821,6 +821,81 @@ let offline = false;
 let syncStatus = "idle"; // idle | syncing | online | offline | error
 let realtimeChannel = null;
 
+// =========================================================================
+// DATA ACCESS LAYER (db)
+// Every call the app makes to Supabase (auth, table CRUD, RPCs, realtime),
+// named by what it does instead of inlined at ~40 call sites throughout the
+// UI code. Behavior here is unchanged from before this layer existed — it
+// is purely a seam. See docs/python-backend-plan.md: a future backend swap
+// changes these function *bodies* one resource at a time; callers below
+// don't need to change again when that happens.
+// =========================================================================
+const db = {
+  auth: {
+    getSession: () => supabaseClient.auth.getSession(),
+    onAuthStateChange: (cb) => supabaseClient.auth.onAuthStateChange(cb),
+    signInWithPassword: (creds) => supabaseClient.auth.signInWithPassword(creds),
+    signUp: (creds) => supabaseClient.auth.signUp(creds),
+    resetPasswordForEmail: (email, opts) => supabaseClient.auth.resetPasswordForEmail(email, opts),
+    updateUser: (patch) => supabaseClient.auth.updateUser(patch),
+    signOut: () => supabaseClient.auth.signOut()
+  },
+
+  closeMyFinishedDays: () => supabaseClient.rpc("close_my_finished_days"),
+  nextDocumentNumber: (docType) => supabaseClient.rpc("next_document_number", { p_doc_type: docType }),
+  adjustStock: (productId, qty) => supabaseClient.rpc("adjust_stock", { p_product_id: productId, p_qty: qty }),
+
+  // ---- per-table reads ----
+  getSettings: (ownerId) => supabaseClient.from("settings").select("*").eq("owner_id", ownerId).maybeSingle(),
+  listProducts: (ownerId) => supabaseClient.from("products").select("*").eq("owner_id", ownerId).order("name"),
+  listCustomers: (ownerId) => supabaseClient.from("customers").select("*").eq("owner_id", ownerId).order("name"),
+  listDocuments: (ownerId) => supabaseClient.from("documents").select("*").eq("owner_id", ownerId).order("created_at"),
+  listCashClosings: (ownerId) => supabaseClient.from("cash_closings").select("*").eq("owner_id", ownerId).order("date"),
+  listCashEntries: (ownerId) => supabaseClient.from("cash_entries").select("*").eq("owner_id", ownerId).order("created_at"),
+  selectAll: (table, ownerId) => supabaseClient.from(table).select("*").eq("owner_id", ownerId),
+
+  loadAll: (ownerId) => Promise.all([
+    db.getSettings(ownerId), db.listProducts(ownerId), db.listCustomers(ownerId),
+    db.listDocuments(ownerId), db.listCashClosings(ownerId), db.listCashEntries(ownerId)
+  ]),
+  insertDefaultSettings: (ownerId) => supabaseClient.from("settings").insert({ owner_id: ownerId }).select().single(),
+
+  // ---- realtime ----
+  subscribeRealtime: (ownerId, onChange) => supabaseClient.channel("shop-changes")
+    .on("postgres_changes", { event: "*", schema: "public", table: "products", filter: `owner_id=eq.${ownerId}` }, () => onChange("products"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "customers", filter: `owner_id=eq.${ownerId}` }, () => onChange("customers"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "documents", filter: `owner_id=eq.${ownerId}` }, () => onChange("documents"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "settings", filter: `owner_id=eq.${ownerId}` }, () => onChange("settings"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "cash_closings", filter: `owner_id=eq.${ownerId}` }, () => onChange("cash_closings"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "cash_entries", filter: `owner_id=eq.${ownerId}` }, () => onChange("cash_entries"))
+    .subscribe(),
+  unsubscribeRealtime: (channel) => supabaseClient.removeChannel(channel),
+
+  // ---- generic single-row CRUD (products, customers, documents, cash_entries) ----
+  insertRow: (table, row) => supabaseClient.from(table).insert(row).select().single(),
+  updateRow: (table, id, patch) => supabaseClient.from(table).update(patch).eq("id", id).select().single(),
+  deleteRow: (table, id) => supabaseClient.from(table).delete().eq("id", id),
+
+  // ---- settings ----
+  updateSettings: (ownerId, patch) => supabaseClient.from("settings").update(patch).eq("owner_id", ownerId).select().single(),
+  updateSettingsNoReturn: (ownerId, patch) => supabaseClient.from("settings").update(patch).eq("owner_id", ownerId),
+
+  // ---- categories: renaming moves the products filed under the old name ----
+  renameProductsCategory: (ownerId, oldName, newName) => supabaseClient.from("products")
+    .update({ category: newName }).eq("owner_id", ownerId).eq("category", oldName),
+
+  // ---- documents: link a customer without needing the row back ----
+  linkDocumentCustomer: (docId, customerId) => supabaseClient.from("documents").update({ customer_id: customerId }).eq("id", docId),
+
+  // ---- cash register ----
+  upsertCashClosing: (row) => supabaseClient.from("cash_closings").upsert(row, { onConflict: "owner_id,date" }).select().single(),
+  deleteCashClosing: (ownerId, date) => supabaseClient.from("cash_closings").delete().eq("owner_id", ownerId).eq("date", date),
+
+  // ---- bulk import/restore ----
+  deleteAllRows: (table, ownerId) => supabaseClient.from(table).delete().eq("owner_id", ownerId),
+  insertRows: (table, rows) => supabaseClient.from(table).insert(rows)
+};
+
 let sidebarOpen = false;
 let currentTab = "dashboard";
 let editingProduct = null;
@@ -921,9 +996,9 @@ async function boot() {
     return;
   }
   supabaseClient = supabase.createClient(cfg.url, cfg.anonKey);
-  const { data } = await supabaseClient.auth.getSession();
+  const { data } = await db.auth.getSession();
   session = data.session || null;
-  supabaseClient.auth.onAuthStateChange((event, s) => {
+  db.auth.onAuthStateChange((event, s) => {
     if (event === "PASSWORD_RECOVERY") { recoveryMode = true; session = s; render(); return; }
     const wasLoggedIn = !!session;
     session = s;
@@ -940,7 +1015,7 @@ async function boot() {
 // on without auto-closing.
 async function closeForgottenDays() {
   try {
-    const res = await supabaseClient.rpc("close_my_finished_days");
+    const res = await db.closeMyFinishedDays();
     if (res.error) console.warn("Auto-close unavailable:", res.error.message);
   } catch (e) {
     console.warn("Auto-close unavailable:", e);
@@ -951,19 +1026,12 @@ async function loadAllData() {
   try {
     const uidUser = session.user.id;
     await closeForgottenDays();
-    const [settingsRes, productsRes, customersRes, docsRes, cashRes, entriesRes] = await Promise.all([
-      supabaseClient.from("settings").select("*").eq("owner_id", uidUser).maybeSingle(),
-      supabaseClient.from("products").select("*").eq("owner_id", uidUser).order("name"),
-      supabaseClient.from("customers").select("*").eq("owner_id", uidUser).order("name"),
-      supabaseClient.from("documents").select("*").eq("owner_id", uidUser).order("created_at"),
-      supabaseClient.from("cash_closings").select("*").eq("owner_id", uidUser).order("date"),
-      supabaseClient.from("cash_entries").select("*").eq("owner_id", uidUser).order("created_at")
-    ]);
+    const [settingsRes, productsRes, customersRes, docsRes, cashRes, entriesRes] = await db.loadAll(uidUser);
     if (settingsRes.error || productsRes.error || customersRes.error || docsRes.error || cashRes.error || entriesRes.error) throw (settingsRes.error || productsRes.error || customersRes.error || docsRes.error || cashRes.error || entriesRes.error);
 
     let settingsRow = settingsRes.data;
     if (!settingsRow) {
-      const ins = await supabaseClient.from("settings").insert({ owner_id: uidUser }).select().single();
+      const ins = await db.insertDefaultSettings(uidUser);
       if (ins.error) throw ins.error;
       settingsRow = ins.data;
     }
@@ -991,37 +1059,30 @@ async function loadAllData() {
 function setupRealtime() {
   teardownRealtime();
   const uidUser = session.user.id;
-  realtimeChannel = supabaseClient.channel("shop-changes")
-    .on("postgres_changes", { event: "*", schema: "public", table: "products", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("products"))
-    .on("postgres_changes", { event: "*", schema: "public", table: "customers", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("customers"))
-    .on("postgres_changes", { event: "*", schema: "public", table: "documents", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("documents"))
-    .on("postgres_changes", { event: "*", schema: "public", table: "settings", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("settings"))
-    .on("postgres_changes", { event: "*", schema: "public", table: "cash_closings", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("cash_closings"))
-    .on("postgres_changes", { event: "*", schema: "public", table: "cash_entries", filter: `owner_id=eq.${uidUser}` }, () => refetchTable("cash_entries"))
-    .subscribe();
+  realtimeChannel = db.subscribeRealtime(uidUser, refetchTable);
 }
-function teardownRealtime() { if (realtimeChannel) { supabaseClient.removeChannel(realtimeChannel); realtimeChannel = null; } }
+function teardownRealtime() { if (realtimeChannel) { db.unsubscribeRealtime(realtimeChannel); realtimeChannel = null; } }
 
 async function refetchTable(table) {
   if (!session) return;
   const uidUser = session.user.id;
   if (table === "products") {
-    const { data, error } = await supabaseClient.from("products").select("*").eq("owner_id", uidUser).order("name");
+    const { data, error } = await db.listProducts(uidUser);
     if (!error) { state.products = data; cacheState(); render(); }
   } else if (table === "customers") {
-    const { data, error } = await supabaseClient.from("customers").select("*").eq("owner_id", uidUser).order("name");
+    const { data, error } = await db.listCustomers(uidUser);
     if (!error) { state.customers = data.map(customerRowToObj); cacheState(); render(); }
   } else if (table === "documents") {
-    const { data, error } = await supabaseClient.from("documents").select("*").eq("owner_id", uidUser).order("created_at");
+    const { data, error } = await db.listDocuments(uidUser);
     if (!error) { state.documents = data.map(docRowToObj); cacheState(); render(); }
   } else if (table === "settings") {
-    const { data, error } = await supabaseClient.from("settings").select("*").eq("owner_id", uidUser).maybeSingle();
+    const { data, error } = await db.getSettings(uidUser);
     if (!error && data) { state.settings = settingsRowToObj(data); cacheState(); render(); }
   } else if (table === "cash_closings") {
-    const { data, error } = await supabaseClient.from("cash_closings").select("*").eq("owner_id", uidUser).order("date");
+    const { data, error } = await db.listCashClosings(uidUser);
     if (!error) { state.cashClosings = data.map(cashClosingRowToObj); cacheState(); render(); }
   } else if (table === "cash_entries") {
-    const { data, error } = await supabaseClient.from("cash_entries").select("*").eq("owner_id", uidUser).order("created_at");
+    const { data, error } = await db.listCashEntries(uidUser);
     if (!error) { state.cashEntries = data.map(cashEntryRowToObj); cacheState(); render(); }
   }
 }
@@ -1080,13 +1141,13 @@ function updateNewPasswordField(field, value) { newPasswordForm[field] = value; 
 function switchAuthScreen(s) { authScreen = s; authError = ""; authNotice = ""; render(); }
 async function doLogin() {
   authBusy = true; authError = ""; authNotice = ""; render();
-  const { error } = await supabaseClient.auth.signInWithPassword({ email: authForm.email.trim(), password: authForm.password });
+  const { error } = await db.auth.signInWithPassword({ email: authForm.email.trim(), password: authForm.password });
   authBusy = false;
   if (error) { authError = error.message === "Invalid login credentials" ? t("wrongCredentials") : error.message; render(); }
 }
 async function doSignup() {
   authBusy = true; authError = ""; authNotice = ""; render();
-  const { error } = await supabaseClient.auth.signUp({ email: authForm.email.trim(), password: authForm.password });
+  const { error } = await db.auth.signUp({ email: authForm.email.trim(), password: authForm.password });
   authBusy = false;
   if (error) { authError = error.message; render(); return; }
   authNotice = t("accountCreated");
@@ -1099,7 +1160,7 @@ async function doPasswordReset() {
   const email = authForm.email.trim();
   if (!email || !isValidEmail(email)) { authError = t("invalidEmail"); render(); return; }
   authBusy = true; authError = ""; authNotice = ""; render();
-  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
   authBusy = false;
   if (error) { authError = error.message; render(); return; }
   authNotice = t("resetSent", { email });
@@ -1109,7 +1170,7 @@ async function doUpdatePassword() {
   if (!newPasswordForm.password || newPasswordForm.password.length < 6) { authError = t("passwordMin6"); render(); return; }
   if (newPasswordForm.password !== newPasswordForm.confirm) { authError = t("passwordsDontMatch"); render(); return; }
   authBusy = true; authError = ""; render();
-  const { error } = await supabaseClient.auth.updateUser({ password: newPasswordForm.password });
+  const { error } = await db.auth.updateUser({ password: newPasswordForm.password });
   authBusy = false;
   if (error) {
     authError = /session missing|session_not_found|Auth session/i.test(error.message)
@@ -1131,7 +1192,7 @@ function cancelRecovery() {
   render();
 }
 async function doLogout() {
-  await supabaseClient.auth.signOut();
+  await db.auth.signOut();
   teardownRealtime();
   dataLoaded = false; state = defaultState();
   render();
@@ -1345,8 +1406,8 @@ async function saveProduct() {
   if (Object.keys(productErrors).length) { render(); return; }
   const row = { owner_id: session.user.id, name: editingProduct.name, category: editingProduct.category, unit: editingProduct.unit, price: Number(editingProduct.price) || 0, stock: editingProduct.stock === "" ? null : Number(editingProduct.stock) };
   let res;
-  if (editingProduct.id) res = await supabaseClient.from("products").update(row).eq("id", editingProduct.id).select().single();
-  else res = await supabaseClient.from("products").insert(row).select().single();
+  if (editingProduct.id) res = await db.updateRow("products", editingProduct.id, row);
+  else res = await db.insertRow("products", row);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   const idx = state.products.findIndex(p => p.id === res.data.id);
   if (idx >= 0) state.products[idx] = res.data; else state.products.push(res.data);
@@ -1356,7 +1417,7 @@ async function saveProduct() {
 }
 async function deleteProduct(id) {
   if (!confirm(t("deleteProductConfirm"))) return;
-  const res = await supabaseClient.from("products").delete().eq("id", id);
+  const res = await db.deleteRow("products", id);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.products = state.products.filter(p => p.id !== id);
   cacheState(); flashSaved(true); render();
@@ -1410,8 +1471,8 @@ async function saveCustomer() {
   if (Object.keys(customerErrors).length) { render(); return; }
   const row = { owner_id: session.user.id, ...customerObjToRow(editingCustomer) };
   let res;
-  if (editingCustomer.id) res = await supabaseClient.from("customers").update(row).eq("id", editingCustomer.id).select().single();
-  else res = await supabaseClient.from("customers").insert(row).select().single();
+  if (editingCustomer.id) res = await db.updateRow("customers", editingCustomer.id, row);
+  else res = await db.insertRow("customers", row);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   const obj = customerRowToObj(res.data);
   const idx = state.customers.findIndex(c => c.id === obj.id);
@@ -1422,7 +1483,7 @@ async function saveCustomer() {
 }
 async function deleteCustomer(id) {
   if (!confirm(t("deleteCustomerConfirm"))) return;
-  const res = await supabaseClient.from("customers").delete().eq("id", id);
+  const res = await db.deleteRow("customers", id);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.customers = state.customers.filter(c => c.id !== id);
   if (viewingCustomerId === id) viewingCustomerId = null;
@@ -1528,7 +1589,7 @@ function allCategories() {
   return out;
 }
 async function saveCategories(cfg) {
-  const res = await supabaseClient.from("settings").update({ categories: cfg }).eq("owner_id", session.user.id).select().single();
+  const res = await db.updateSettings(session.user.id, { categories: cfg });
   if (res.error) {
     // The shop owner gets one plain sentence — the real reason (a missing column
     // after a schema change, a dropped connection) means nothing to them. It goes
@@ -1573,8 +1634,7 @@ async function renameCategory(oldName) {
   // Products have to move with the rename, or the old name walks straight back
   // into the list as an "in use" category.
   if (categoryUsage(oldName)) {
-    const res = await supabaseClient.from("products").update({ category: name })
-      .eq("owner_id", session.user.id).eq("category", oldName);
+    const res = await db.renameProductsCategory(session.user.id, oldName, name);
     if (res.error) { console.error("renaming category on products failed", res.error); alert(t("categorySaveFailed")); return; }
   }
   if (!await saveCategories(cfg)) return;
@@ -1740,7 +1800,7 @@ async function applyStockAdjustments(items) {
     if (!it.productId || !it.name) continue;
     const qty = Number(it.qty) || 0;
     if (!qty) continue;
-    const { error } = await supabaseClient.rpc("adjust_stock", { p_product_id: it.productId, p_qty: qty });
+    const { error } = await db.adjustStock(it.productId, qty);
     if (error) console.error("stock adjust failed for", it.productId, error);
   }
   await refetchTable("products");
@@ -1776,7 +1836,7 @@ async function saveDoc() {
     // rewound by exactly what the old version took before the new one applies.
     const originalItems = original ? original.items.map(it => ({ ...it })) : [];
     const wasInvoice = original && original.docType === "invoice";
-    const res = await supabaseClient.from("documents").update(fields).eq("id", docForm.editingId).select().single();
+    const res = await db.updateRow("documents", docForm.editingId, fields);
     if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
     const updated = docRowToObj(res.data);
     const idx = state.documents.findIndex(x => x.id === updated.id);
@@ -1791,11 +1851,11 @@ async function saveDoc() {
     return;
   }
 
-  const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: docForm.docType });
+  const { data: number, error: numErr } = await db.nextDocumentNumber(docForm.docType);
   if (numErr) { flashSaved(false, t("numberingError") + numErr.message); return; }
 
   const row = { owner_id: session.user.id, doc_type: docForm.docType, number, ...fields };
-  const res = await supabaseClient.from("documents").insert(row).select().single();
+  const res = await db.insertRow("documents", row);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.documents.push(docRowToObj(res.data));
   docForm = null;
@@ -1821,16 +1881,16 @@ async function ensureCustomerForOffer(offerDoc) {
     (!snap.eik || !normStr(c.eik) || normStr(c.eik) === normStr(snap.eik)));
   if (known) return known.id;
   if (!confirm(t("saveCustomerConfirm", { name }))) return null;
-  const res = await supabaseClient.from("customers").insert({
+  const res = await db.insertRow("customers", {
     owner_id: session.user.id,
     ...customerObjToRow({ name, eik: snap.eik || "", vatNumber: snap.vatNumber || "",
       address: snap.address || "", phone: "", email: "" })
-  }).select().single();
+  });
   if (res.error) { console.error("saving customer from offer failed", res.error); flashSaved(false, t("errorPrefix") + res.error.message); return null; }
   state.customers.push(customerRowToObj(res.data));
   state.customers.sort((a, b) => a.name.localeCompare(b.name, "bg"));
   // Link the offer too, so the pair reads consistently afterwards.
-  await supabaseClient.from("documents").update({ customer_id: res.data.id }).eq("id", offerDoc.id);
+  await db.linkDocumentCustomer(offerDoc.id, res.data.id);
   const idx = state.documents.findIndex(d => d.id === offerDoc.id);
   if (idx >= 0) state.documents[idx] = { ...state.documents[idx], customerId: res.data.id };
   alert(t("customerSavedAlert", { name }));
@@ -1841,7 +1901,7 @@ async function convertToInvoice(id) {
   const offerDoc = state.documents.find(d => d.id === id);
   if (!confirm(t("convertConfirm", { n: offerDoc.number, sum: money(offerDoc.total) }))) return;
   const customerId = await ensureCustomerForOffer(offerDoc);
-  const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: "invoice" });
+  const { data: number, error: numErr } = await db.nextDocumentNumber("invoice");
   if (numErr) { flashSaved(false, t("errorPrefix") + numErr.message); return; }
   const row = {
     owner_id: session.user.id, doc_type: "invoice", number, date: todayStr(),
@@ -1849,7 +1909,7 @@ async function convertToInvoice(id) {
     items: offerDoc.items, vat_rate: offerDoc.vatRate, subtotal: offerDoc.subtotal, vat_amount: offerDoc.vatAmount,
     total: offerDoc.total, paid: false, converted_from_offer_id: offerDoc.id, payment_method: offerDoc.paymentMethod || "cash"
   };
-  const res = await supabaseClient.from("documents").insert(row).select().single();
+  const res = await db.insertRow("documents", row);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.documents.push(docRowToObj(res.data));
   cacheState(); flashSaved(true); render();
@@ -1915,7 +1975,7 @@ async function saveCreditNote() {
   creditFormError = "";
   if (!confirm(t("creditConfirm", { n: tot.selected.length, sum: money(tot.total), inv: invoice.number }))) return;
 
-  const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: "credit" });
+  const { data: number, error: numErr } = await db.nextDocumentNumber("credit");
   if (numErr) { flashSaved(false, t("errorPrefix") + numErr.message); return; }
   const items = tot.selected.map(it => ({ id: it.id, productId: it.productId, name: it.name, unit: it.unit, price: it.price, qty: -Math.abs(Number(it.creditQty)) }));
   const row = {
@@ -1924,7 +1984,7 @@ async function saveCreditNote() {
     items, vat_rate: invoice.vatRate, subtotal: -tot.subtotal, vat_amount: -tot.vatAmount, total: -tot.total,
     paid: false, related_invoice_number: invoice.number, payment_method: invoice.paymentMethod || "cash"
   };
-  const res = await supabaseClient.from("documents").insert(row).select().single();
+  const res = await db.insertRow("documents", row);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.documents.push(docRowToObj(res.data));
   creditForm = null;
@@ -1940,7 +2000,7 @@ async function deleteDocument(id) {
   const typeLabel = d.docType === "invoice" ? t("typeInvoiceGen") : d.docType === "offer" ? t("typeOfferGen") : t("typeCreditGen");
   const stockNote = d.docType !== "offer" ? t("stockWillRevert") : "";
   if (!confirm(t("deleteDocConfirm", { type: typeLabel, n: d.number, sum: money(d.total), stock: stockNote }))) return;
-  const res = await supabaseClient.from("documents").delete().eq("id", id);
+  const res = await db.deleteRow("documents", id);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.documents = state.documents.filter(x => x.id !== id);
   cacheState(); flashSaved(true); render();
@@ -1952,7 +2012,7 @@ async function deleteDocument(id) {
 
 async function togglePaid(id) {
   const d = state.documents.find(d => d.id === id);
-  const res = await supabaseClient.from("documents").update({ paid: !d.paid }).eq("id", id).select().single();
+  const res = await db.updateRow("documents", id, { paid: !d.paid });
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   d.paid = res.data.paid;
   cacheState(); flashSaved(true); render();
@@ -2439,7 +2499,7 @@ async function saveCashEntry() {
   if (closingFor(cashViewDate)) { alert(t("closedDayLocked")); return; }
   if (!isValidMoney(cashEntryForm.amount) || Number(cashEntryForm.amount) <= 0) { alert(t("enterValidAmount")); return; }
   const row = { owner_id: session.user.id, date: cashViewDate, amount: Number(cashEntryForm.amount), payment_method: cashEntryForm.paymentMethod, note: cashEntryForm.note || "" };
-  const res = await supabaseClient.from("cash_entries").insert(row).select().single();
+  const res = await db.insertRow("cash_entries", row);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.cashEntries.push(cashEntryRowToObj(res.data));
   cashEntryForm = null;
@@ -2449,7 +2509,7 @@ async function deleteCashEntry(id) {
   const entry = state.cashEntries.find(e => e.id === id);
   if (entry && closingFor(entry.date)) { alert(t("closedDayLocked")); return; }
   if (!confirm(t("deleteEntryConfirm"))) return;
-  const res = await supabaseClient.from("cash_entries").delete().eq("id", id);
+  const res = await db.deleteRow("cash_entries", id);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.cashEntries = state.cashEntries.filter(e => e.id !== id);
   cacheState(); flashSaved(true); render();
@@ -2475,7 +2535,7 @@ async function saveCashClosing() {
     total: totals.total, invoice_count: totals.invoiceCount, entry_count: totals.entryCount,
     auto_closed: false
   };
-  const res = await supabaseClient.from("cash_closings").upsert(row, { onConflict: "owner_id,date" }).select().single();
+  const res = await db.upsertCashClosing(row);
   if (res.error) { flashSaved(false, isMissingColumnError(res.error) ? t("closingNeedsSchema") : t("errorPrefix") + res.error.message); return; }
   const obj = cashClosingRowToObj(res.data);
   const idx = state.cashClosings.findIndex(c => c.date === obj.date);
@@ -2485,7 +2545,7 @@ async function saveCashClosing() {
 }
 async function reopenDay() {
   if (!confirm(t("reopenConfirm"))) return;
-  const res = await supabaseClient.from("cash_closings").delete().eq("owner_id", session.user.id).eq("date", cashViewDate);
+  const res = await db.deleteCashClosing(session.user.id, cashViewDate);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.cashClosings = state.cashClosings.filter(c => c.date !== cashViewDate);
   cashForm = null;
@@ -2628,7 +2688,7 @@ async function saveSettings() {
   ensureSettingsForm();
   settingsErrors = validateSettings(settingsForm);
   if (Object.keys(settingsErrors).length) { render(); return; }
-  const res = await supabaseClient.from("settings").update(settingsObjToRow(settingsForm)).eq("owner_id", session.user.id).select().single();
+  const res = await db.updateSettings(session.user.id, settingsObjToRow(settingsForm));
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.settings = settingsRowToObj(res.data);
   settingsForm = null; settingsEditing = false; settingsErrors = {};
@@ -2846,7 +2906,7 @@ async function runImport(imported, mode, opts) {
     const uid = session.user.id;
     if (mode === "replace") {
       for (const table of ["documents", "cash_entries", "cash_closings", "products", "customers"]) {
-        const { error } = await supabaseClient.from(table).delete().eq("owner_id", uid);
+        const { error } = await db.deleteAllRows(table, uid);
         if (error) throw error;
       }
     }
@@ -2856,7 +2916,7 @@ async function runImport(imported, mode, opts) {
 
     const products = take("products");
     if (products.length) {
-      const { error } = await supabaseClient.from("products").insert(products.map(p => ({
+      const { error } = await db.insertRows("products", products.map(p => ({
         owner_id: uid, name: p.name, category: p.category || "", unit: p.unit || "",
         price: Number(p.price) || 0, stock: p.stock === "" || p.stock == null ? null : Number(p.stock)
       })));
@@ -2864,14 +2924,14 @@ async function runImport(imported, mode, opts) {
     }
     const customers = take("customers");
     if (customers.length) {
-      const { error } = await supabaseClient.from("customers").insert(
+      const { error } = await db.insertRows("customers",
         customers.map(c => ({ owner_id: uid, ...customerObjToRow(c) })));
       if (error) throw error;
     }
 
     // Customers must be on hand before documents, so each document can be tied
     // back to its customer row instead of keeping only a name.
-    const { data: custRows } = await supabaseClient.from("customers").select("*").eq("owner_id", uid);
+    const { data: custRows } = await db.selectAll("customers", uid);
     const byIdentity = new Map();
     (custRows || []).forEach(r => {
       byIdentity.set(normStr(r.name).toLowerCase() + "|" + normStr(r.eik), r.id);
@@ -2886,7 +2946,7 @@ async function runImport(imported, mode, opts) {
 
     const documents = take("documents");
     if (documents.length) {
-      const { error } = await supabaseClient.from("documents").insert(documents.map(d => ({
+      const { error } = await db.insertRows("documents", documents.map(d => ({
         owner_id: uid, doc_type: d.docType, number: d.number, date: d.date,
         customer_id: linkCustomer(d), customer_name: d.customerName || "",
         customer_snapshot: d.customerSnapshot || null, items: d.items || [],
@@ -2908,7 +2968,7 @@ async function runImport(imported, mode, opts) {
       conflicting = before - closings.length;
     }
     if (closings.length) {
-      const { error } = await supabaseClient.from("cash_closings").insert(closings.map(c => {
+      const { error } = await db.insertRows("cash_closings", closings.map(c => {
         // Carry the saved day totals through verbatim. They are a snapshot taken
         // at closing time on purpose — recomputing them on restore would give a
         // different answer for any day whose documents were edited since.
@@ -2928,7 +2988,7 @@ async function runImport(imported, mode, opts) {
     }
     const entries = take("cashEntries");
     if (entries.length) {
-      const { error } = await supabaseClient.from("cash_entries").insert(entries.map(c => ({
+      const { error } = await db.insertRows("cash_entries", entries.map(c => ({
         owner_id: uid, date: c.date, amount: Number(c.amount) || 0,
         payment_method: c.paymentMethod || "cash", note: c.note || ""
       })));
@@ -3002,7 +3062,7 @@ async function restoreSettings(imported, mode, insertedDocs) {
   }
 
   if (!Object.keys(patch).length) return;
-  const { error } = await supabaseClient.from("settings").update(patch).eq("owner_id", uid);
+  const { error } = await db.updateSettingsNoReturn(uid, patch);
   if (error) throw error;
 }
 
