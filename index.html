@@ -360,11 +360,11 @@ const TRANSLATIONS = {
     categoryInUse: "„{name}“ се използва от {n}. Преместете ги в друга категория, преди да я изтриете.",
     usedByProducts: "{n} продукта", usedByProduct: "1 продукт", categoryNotUsed: "не се използва",
     pyBackendTitle: "Python бекенд (експериментално)",
-    pyBackendHint: "Отделна, незадължителна връзка към Python бекенда от docs/python-backend-plan.md. Докато е свързана, продуктите (добавяне/редакция/изтриване) се пазят там вместо в Supabase — останалите данни не се засягат. Внимание: докато е свързан, продуктите не участват в JSON резервно копие/възстановяване или в живата синхронизация между устройства — това идва в по-късна фаза.",
+    pyBackendHint: "Отделна, незадължителна връзка към Python бекенда от docs/python-backend-plan.md. Докато е свързана, продуктите и клиентите (добавяне/редакция/изтриване) се пазят там вместо в Supabase — останалите данни не се засягат. Внимание: докато е свързан, тези данни не участват в JSON резервно копие/възстановяване или в живата синхронизация между устройства — това идва в по-късна фаза.",
     pyBackendConnect: "Свържи Python бекенд",
-    pyBackendConnectedTo: "Свързан към {url} — продуктите се пазят там.",
-    pyBackendDisconnect: "Прекъсни връзката (продуктите се връщат в Supabase)",
-    pyBackendDisconnectConfirm: "Продуктите отново ще се пазят в Supabase. Продуктите, добавени в Python бекенда, остават там — не се трият.",
+    pyBackendConnectedTo: "Свързан към {url} — продуктите и клиентите се пазят там.",
+    pyBackendDisconnect: "Прекъсни връзката (данните се връщат в Supabase)",
+    pyBackendDisconnectConfirm: "Продуктите и клиентите отново ще се пазят в Supabase. Данните, добавени в Python бекенда, остават там — не се трият.",
     pyBackendUrlPrompt: "Адрес на Python бекенда:",
     pyBackendEmailPrompt: "Имейл за Python бекенда:",
     pyBackendPasswordPrompt: "Парола:",
@@ -565,11 +565,11 @@ const TRANSLATIONS = {
     categoryInUse: "\u201c{name}\u201d is used by {n}. Move them to another category before deleting it.",
     usedByProducts: "{n} products", usedByProduct: "1 product", categoryNotUsed: "not used",
     pyBackendTitle: "Python backend (experimental)",
-    pyBackendHint: "A separate, optional connection to the Python backend from docs/python-backend-plan.md. While connected, product writes (add/edit/delete) go there instead of Supabase — nothing else is affected. Note: while connected, products are left out of the JSON backup/restore and out of live multi-device sync — those come in a later phase.",
+    pyBackendHint: "A separate, optional connection to the Python backend from docs/python-backend-plan.md. While connected, product and customer writes (add/edit/delete) go there instead of Supabase — nothing else is affected. Note: while connected, that data is left out of the JSON backup/restore and out of live multi-device sync — those come in a later phase.",
     pyBackendConnect: "Connect Python backend",
-    pyBackendConnectedTo: "Connected to {url} — products are stored there.",
-    pyBackendDisconnect: "Disconnect (products go back to Supabase)",
-    pyBackendDisconnectConfirm: "Products will be stored in Supabase again. Products already added to the Python backend stay there — nothing is deleted.",
+    pyBackendConnectedTo: "Connected to {url} — products and customers are stored there.",
+    pyBackendDisconnect: "Disconnect (data goes back to Supabase)",
+    pyBackendDisconnectConfirm: "Products and customers will be stored in Supabase again. Data already added to the Python backend stays there — nothing is deleted.",
     pyBackendUrlPrompt: "Python backend URL:",
     pyBackendEmailPrompt: "Email for the Python backend:",
     pyBackendPasswordPrompt: "Password:",
@@ -889,7 +889,11 @@ async function pyRequest(baseUrl, token, method, path, body) {
     return { data: null, error: { message: e.message } };
   }
 }
-function usingPyBackendFor(table) { return table === "products" && !!(pyBackend && pyBackend.token); }
+function usingPyBackendFor(table) {
+  // Grows as more resources get a Python endpoint (see docs/python-backend-plan.md)
+  // — one connection, whose scope widens with each phase.
+  return ["products", "customers"].includes(table) && !!(pyBackend && pyBackend.token);
+}
 
 const db = {
   auth: {
@@ -916,7 +920,9 @@ const db = {
   listProducts: (ownerId) => usingPyBackendFor("products")
     ? db.pyFetch("GET", "/products")
     : supabaseClient.from("products").select("*").eq("owner_id", ownerId).order("name"),
-  listCustomers: (ownerId) => supabaseClient.from("customers").select("*").eq("owner_id", ownerId).order("name"),
+  listCustomers: (ownerId) => usingPyBackendFor("customers")
+    ? db.pyFetch("GET", "/customers")
+    : supabaseClient.from("customers").select("*").eq("owner_id", ownerId).order("name"),
   listDocuments: (ownerId) => supabaseClient.from("documents").select("*").eq("owner_id", ownerId).order("created_at"),
   listCashClosings: (ownerId) => supabaseClient.from("cash_closings").select("*").eq("owner_id", ownerId).order("date"),
   listCashEntries: (ownerId) => supabaseClient.from("cash_entries").select("*").eq("owner_id", ownerId).order("created_at"),
@@ -940,18 +946,20 @@ const db = {
   unsubscribeRealtime: (channel) => supabaseClient.removeChannel(channel),
 
   // ---- generic single-row CRUD (products, customers, documents, cash_entries) ----
-  // products is special-cased inside each of these: once a Python backend is
-  // connected, product writes go there instead of Supabase. Every other
-  // table is untouched — this is Phase 2 of the migration plan, one
-  // resource at a time.
+  // A table migrated to the Python backend (usingPyBackendFor) is routed to
+  // its endpoint there instead of Supabase — every other table is
+  // untouched. The Python API's routes are named to match the Supabase
+  // table names 1:1 (/products, /customers, ...), which is what lets this
+  // stay generic as more resources migrate instead of growing a branch per
+  // table.
   insertRow: (table, row) => usingPyBackendFor(table)
-    ? db.pyFetch("POST", "/products", row)
+    ? db.pyFetch("POST", `/${table}`, row)
     : supabaseClient.from(table).insert(row).select().single(),
   updateRow: (table, id, patch) => usingPyBackendFor(table)
-    ? db.pyFetch("PUT", `/products/${id}`, patch)
+    ? db.pyFetch("PUT", `/${table}/${id}`, patch)
     : supabaseClient.from(table).update(patch).eq("id", id).select().single(),
   deleteRow: (table, id) => usingPyBackendFor(table)
-    ? db.pyFetch("DELETE", `/products/${id}`)
+    ? db.pyFetch("DELETE", `/${table}/${id}`)
     : supabaseClient.from(table).delete().eq("id", id),
 
   // ---- settings ----
@@ -2853,13 +2861,13 @@ async function connectPyBackend() {
   pyBackend = { url: trimmedUrl, token: res.data.access_token };
   savePyConfig(pyBackend);
   alert(t("pyBackendConnected"));
-  await refetchTable("products");
+  await Promise.all([refetchTable("products"), refetchTable("customers")]);
   render();
 }
 async function disconnectPyBackend() {
   if (!confirm(t("pyBackendDisconnectConfirm"))) return;
   clearPyConfig();
-  await refetchTable("products");
+  await Promise.all([refetchTable("products"), refetchTable("customers")]);
   render();
 }
 

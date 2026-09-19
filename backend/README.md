@@ -11,12 +11,16 @@ Currently implemented:
 - **Phase 2 — products.** List/create/update/delete, all scoped to the
   authenticated owner, plus a `rename-category` bulk endpoint (mirrors the
   frontend's category rename, which moves every product filed under the
-  old name). In `index.html`, connect via the new "Python backend
-  (experimental)" card on the Settings tab — it's a separate, optional
-  connection from the Supabase one; while connected, product writes go
-  here instead of Supabase, nothing else changes.
+  old name).
+- **Phase 3 — customers.** Same shape: list/create/update/delete, owner-
+  scoped.
 
-Customers/documents/cash-register endpoints come in later phases.
+In `index.html`, connect via the "Python backend (experimental)" card on
+the Settings tab — it's a separate, optional connection from the Supabase
+one; while connected, product and customer writes go here instead of
+Supabase, nothing else changes.
+
+Documents/cash-register endpoints come in later phases.
 
 ## One-time setup
 

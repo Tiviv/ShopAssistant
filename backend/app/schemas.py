@@ -49,6 +49,27 @@ class ProductOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CustomerIn(BaseModel):
+    name: str = Field(min_length=1)
+    eik: str = ""
+    vat_number: str = ""
+    address: str = ""
+    phone: str = ""
+    email: str = ""
+
+
+class CustomerOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    eik: str
+    vat_number: str
+    address: str
+    phone: str
+    email: str
+
+    model_config = {"from_attributes": True}
+
+
 class SettingsOut(BaseModel):
     owner_id: uuid.UUID
     company_name: str
