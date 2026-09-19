@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shopassistant
+      POSTGRES_PASSWORD: shopassistant
+      POSTGRES_DB: shopassistant
+    ports:
+      # Non-default host port so this doesn't collide with a Postgres you
+      # might already have running locally.
+      - "5433:5432"
+    volumes:
+      - shopassistant_pg_data:/var/lib/postgresql/data
+
+volumes:
+  shopassistant_pg_data:

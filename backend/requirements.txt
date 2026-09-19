@@ -1,0 +1,15 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+email-validator==2.2.0
+# passlib 1.7.4's self-test crashes against bcrypt>=4.1 (it passes a >72-byte
+# string through, which bcrypt 4.1+ now raises on instead of truncating) —
+# pin bcrypt to the last version that still works with it.
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.20

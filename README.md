@@ -4,6 +4,12 @@ A small offline-style invoicing/inventory app for a produce/grocery wholesale
 business, now backed by [Supabase](https://supabase.com) (free tier) instead
 of only browser `localStorage`.
 
+> This branch (`feature/python_backend`) is a parallel, non-breaking track
+> that's gradually growing a Python (FastAPI) backend alongside the Supabase
+> one described below — see `docs/python-backend-plan.md` and
+> `docs/python-backend-progress.md`. Everything below this note still
+> describes the Supabase version that actually runs today.
+
 ## What changed from the original offline version
 
 The original single-file app (kept at `legacy-offline/index.html` for
