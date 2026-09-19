@@ -113,6 +113,31 @@ what the file says, what the account already had, and the highest number
 actually imported — because rolling a counter back would eventually hand out an
 invoice number that already exists on paper.
 
+### One-off buyers
+
+The customer picker on a document has a third choice besides "no registered
+customer" and the customer list: **Въведи ръчно**. It reveals name, ЕИК, ДДС
+number and address — the four fields that appear on the printed sheet — and
+stores them on that document alone. Nothing is added to the customer list.
+
+This exists for quotes above all: a buyer who never accepts the offer should not
+leave a permanent customer record behind. The same control is available on
+invoices, since it is one shared form and a one-off sale to a company has the
+same shape.
+
+A document written this way prints identically to one for a registered customer,
+because the typed details are saved as the document's customer snapshot — the
+same field the print view already reads. Reopening such a document for editing
+brings back manual mode with the details it was issued with.
+
+**Converting a quote to an invoice is where the app asks.** That is the moment a
+speculative buyer became real business, so if the quote's customer is not on
+file, it offers to add them, and links both the new invoice and the original
+quote to the new record. Declining is fine: the invoice is still issued, just
+unlinked. If a customer with that name (and a matching ЕИК, when both have one)
+is already on file — added by hand since the quote was written — they are linked
+silently rather than offered up as a duplicate.
+
 ### Invoicing by department
 
 A line on an invoice or quote can be a **whole department** instead of a

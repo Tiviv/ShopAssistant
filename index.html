@@ -337,6 +337,11 @@ const TRANSLATIONS = {
     searchDocs: "Търсене по номер, клиент или дата…",
     paidPill: "Платена", waitingPill: "Чака", towardsNo: "към № {n}", creditPrefix: "КИ № {n}",
     noRegisteredCustomer: "Без регистриран клиент", vatRate: "ДДС ставка", paymentMethod: "Начин на плащане",
+    manualCustomer: "Въведи ръчно",
+    manualCustomerHint: "Данните остават само в този документ — клиентът не се добавя в списъка с клиенти.",
+    errCustomerName: "Въведете име на клиента.",
+    saveCustomerConfirm: "„{name}“ не е в списъка с клиенти. Да бъде ли добавен там?",
+    customerSavedAlert: "„{name}“ е добавен в списъка с клиенти.",
     product: "Продукт / Отдел", chooseProduct: "— избери продукт или отдел —", qty: "Кол-во", unitPlaceholder: "мярка",
     productsGroup: "Продукти", departmentsGroup: "Отдели",
     newCategoryOption: "+ Нова категория…", newCategoryPrompt: "Име на новата категория:",
@@ -525,6 +530,11 @@ const TRANSLATIONS = {
     searchDocs: "Search by number, customer or date…",
     paidPill: "Paid", waitingPill: "Pending", towardsNo: "for No. {n}", creditPrefix: "CN No. {n}",
     noRegisteredCustomer: "No registered customer", vatRate: "VAT rate", paymentMethod: "Payment method",
+    manualCustomer: "Enter manually",
+    manualCustomerHint: "These details stay on this document only \u2014 the customer is not added to your customer list.",
+    errCustomerName: "Enter the customer\u2019s name.",
+    saveCustomerConfirm: "\u201c{name}\u201d is not in your customer list. Add them?",
+    customerSavedAlert: "\u201c{name}\u201d was added to your customer list.",
     product: "Product / Department", chooseProduct: "— choose a product or department —", qty: "Qty", unitPlaceholder: "unit",
     productsGroup: "Products", departmentsGroup: "Departments",
     newCategoryOption: "+ New category…", newCategoryPrompt: "Name of the new category:",
@@ -1583,10 +1593,39 @@ async function deleteCategory(name) {
   if (await saveCategories(cfg)) render();
 }
 
+function emptyManualCustomer() { return { name: "", eik: "", vatNumber: "", address: "" }; }
+let docErrors = {};
+// A one-off buyer — someone who may never accept the offer — gets their details
+// typed straight onto the document instead of becoming a permanent customer.
+function pickDocCustomer(value) {
+  if (value === "__manual__") {
+    docForm.manual = true;
+    docForm.customerId = "";
+    if (!docForm.manualCustomer) docForm.manualCustomer = emptyManualCustomer();
+  } else {
+    docForm.manual = false;
+    docForm.customerId = value;
+  }
+  docErrors = {};
+  render();
+}
+function updateManualCustomer(field, value) { docForm.manualCustomer[field] = value; }
+// Only the fields that actually appear on the printed document are validated;
+// phone and e-mail are not on it, so they are not asked for here.
+function validateManualCustomer(c) {
+  const errs = {};
+  if (!c.name || !c.name.trim()) errs.name = t("errCustomerName");
+  if (!isValidEIK(c.eik)) errs.eik = t("errEik");
+  if (!isValidVAT(c.vatNumber)) errs.vatNumber = t("errVat");
+  return errs;
+}
+
 function emptyLineItem() { return { id: uid(), productId: "", category: "", name: "", unit: "", qty: 1, price: 0, amountMode: false }; }
 
 function newDoc(docType) {
-  docForm = { docType, date: todayStr(), customerId: "", customerName: "", items: [emptyLineItem()], vatRate: 20, paid: false, paymentMethod: "cash" };
+  docForm = { docType, date: todayStr(), customerId: "", customerName: "", manual: false,
+    manualCustomer: emptyManualCustomer(), items: [emptyLineItem()], vatRate: 20, paid: false, paymentMethod: "cash" };
+  docErrors = {};
   creditForm = null; creditFormError = "";
   render();
 }
@@ -1603,9 +1642,17 @@ function editDoc(id) {
   docForm = {
     editingId: d.id, number: d.number, docType: d.docType, date: d.date,
     customerId: d.customerId || "", customerName: d.customerName || "",
+    // A document whose buyer was typed by hand reopens in manual mode, with the
+    // details it was issued with rather than an empty form.
+    manual: !d.customerId && !!(d.customerSnapshot || d.customerName),
+    manualCustomer: d.customerSnapshot
+      ? { name: d.customerSnapshot.name || d.customerName || "", eik: d.customerSnapshot.eik || "",
+          vatNumber: d.customerSnapshot.vatNumber || "", address: d.customerSnapshot.address || "" }
+      : { ...emptyManualCustomer(), name: d.customerName || "" },
     items: d.items.length ? d.items.map(it => ({ ...it })) : [emptyLineItem()],
     vatRate: d.vatRate, paid: d.paid, paymentMethod: d.paymentMethod || "cash"
   };
+  docErrors = {};
   creditForm = null; creditFormError = ""; printingDocId = null;
   render();
 }
@@ -1700,14 +1747,25 @@ async function applyStockAdjustments(items) {
 }
 
 async function saveDoc() {
+  if (docForm.manual) {
+    docErrors = validateManualCustomer(docForm.manualCustomer);
+    if (Object.keys(docErrors).length) { render(); return; }
+  }
   if (docForm.items.every(it => !it.name)) { alert(t("addAtLeastOneProduct")); return; }
-  const customer = state.customers.find(c => c.id === docForm.customerId);
+  const customer = docForm.manual ? null : state.customers.find(c => c.id === docForm.customerId);
+  // Typed-in details are stored as the document's customer snapshot, which is
+  // what the printed sheet reads — so the document prints identically whether
+  // the buyer is on file or not.
+  const manualSnap = docForm.manual
+    ? { name: docForm.manualCustomer.name.trim(), eik: docForm.manualCustomer.eik.trim(),
+        vatNumber: docForm.manualCustomer.vatNumber.trim(), address: docForm.manualCustomer.address.trim() }
+    : null;
   const tot = computeDocTotals();
 
   const fields = {
-    date: docForm.date, customer_id: docForm.customerId || null,
-    customer_name: customer ? customer.name : (docForm.customerName || ""),
-    customer_snapshot: customer || null, items: docForm.items,
+    date: docForm.date, customer_id: docForm.manual ? null : (docForm.customerId || null),
+    customer_name: customer ? customer.name : (manualSnap ? manualSnap.name : (docForm.customerName || "")),
+    customer_snapshot: customer || manualSnap, items: docForm.items,
     vat_rate: docForm.vatRate, subtotal: tot.subtotal, vat_amount: tot.vatAmount, total: tot.total,
     paid: !!docForm.paid, payment_method: docForm.paymentMethod || "cash"
   };
@@ -1747,14 +1805,47 @@ async function saveDoc() {
   await refetchTable("settings");
 }
 
+// An offer that was written for a one-off buyer has no customer record behind
+// it. Turning it into an invoice is the moment that buyer became real business,
+// so that is where it is worth asking whether to keep them.
+async function ensureCustomerForOffer(offerDoc) {
+  const linked = offerDoc.customerId && state.customers.find(c => c.id === offerDoc.customerId);
+  if (linked) return linked.id;
+  const snap = offerDoc.customerSnapshot || {};
+  const name = (snap.name || offerDoc.customerName || "").trim();
+  if (!name) return null;
+  // Someone added to the list since the offer was written should simply be
+  // linked, not offered up as a duplicate.
+  const known = state.customers.find(c =>
+    normStr(c.name).toLowerCase() === name.toLowerCase() &&
+    (!snap.eik || !normStr(c.eik) || normStr(c.eik) === normStr(snap.eik)));
+  if (known) return known.id;
+  if (!confirm(t("saveCustomerConfirm", { name }))) return null;
+  const res = await supabaseClient.from("customers").insert({
+    owner_id: session.user.id,
+    ...customerObjToRow({ name, eik: snap.eik || "", vatNumber: snap.vatNumber || "",
+      address: snap.address || "", phone: "", email: "" })
+  }).select().single();
+  if (res.error) { console.error("saving customer from offer failed", res.error); flashSaved(false, t("errorPrefix") + res.error.message); return null; }
+  state.customers.push(customerRowToObj(res.data));
+  state.customers.sort((a, b) => a.name.localeCompare(b.name, "bg"));
+  // Link the offer too, so the pair reads consistently afterwards.
+  await supabaseClient.from("documents").update({ customer_id: res.data.id }).eq("id", offerDoc.id);
+  const idx = state.documents.findIndex(d => d.id === offerDoc.id);
+  if (idx >= 0) state.documents[idx] = { ...state.documents[idx], customerId: res.data.id };
+  alert(t("customerSavedAlert", { name }));
+  return res.data.id;
+}
+
 async function convertToInvoice(id) {
   const offerDoc = state.documents.find(d => d.id === id);
   if (!confirm(t("convertConfirm", { n: offerDoc.number, sum: money(offerDoc.total) }))) return;
+  const customerId = await ensureCustomerForOffer(offerDoc);
   const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: "invoice" });
   if (numErr) { flashSaved(false, t("errorPrefix") + numErr.message); return; }
   const row = {
     owner_id: session.user.id, doc_type: "invoice", number, date: todayStr(),
-    customer_id: offerDoc.customerId, customer_name: offerDoc.customerName, customer_snapshot: offerDoc.customerSnapshot,
+    customer_id: customerId, customer_name: offerDoc.customerName, customer_snapshot: offerDoc.customerSnapshot,
     items: offerDoc.items, vat_rate: offerDoc.vatRate, subtotal: offerDoc.subtotal, vat_amount: offerDoc.vatAmount,
     total: offerDoc.total, paid: false, converted_from_offer_id: offerDoc.id, payment_method: offerDoc.paymentMethod || "cash"
   };
@@ -2123,9 +2214,10 @@ function renderDocForm() {
       <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom:6px;">
         <div class="field-wrap"><label class="field">${t("date")}</label><input type="date" value="${docForm.date}" oninput="updateDocField('date', this.value)"></div>
         <div class="field-wrap"><label class="field">${t("client")}</label>
-          <select onchange="updateDocField('customerId', this.value)">
-            <option value="">${t("noRegisteredCustomer")}</option>
-            ${state.customers.map(c => `<option value="${c.id}" ${docForm.customerId === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+          <select onchange="pickDocCustomer(this.value)">
+            <option value="" ${!docForm.manual && !docForm.customerId ? "selected" : ""}>${t("noRegisteredCustomer")}</option>
+            ${state.customers.map(c => `<option value="${c.id}" ${!docForm.manual && docForm.customerId === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+            <option value="__manual__" ${docForm.manual ? "selected" : ""}>${t("manualCustomer")}</option>
           </select>
         </div>
         <div class="field-wrap"><label class="field">${t("vatRate")}</label>
@@ -2141,6 +2233,19 @@ function renderDocForm() {
           </div>
         ` : ""}
       </div>
+      ${docForm.manual ? `
+        <p class="muted" style="font-size:12px; margin:0 0 8px;">${t("manualCustomerHint")}</p>
+        <div class="grid" style="grid-template-columns: 2fr 1fr 1fr 2fr; margin-bottom:6px;">
+          <div class="field-wrap ${docErrors.name ? "has-error" : ""}"><label class="field">${t("nameCompany")}</label>
+            <input value="${esc(docForm.manualCustomer.name)}" oninput="updateManualCustomer('name', this.value)" placeholder="${t("customerNamePlaceholder")}">${fieldError(docErrors, "name")}</div>
+          <div class="field-wrap ${docErrors.eik ? "has-error" : ""}"><label class="field">${t("eik")}</label>
+            <input value="${esc(docForm.manualCustomer.eik)}" oninput="updateManualCustomer('eik', this.value)">${fieldError(docErrors, "eik")}</div>
+          <div class="field-wrap ${docErrors.vatNumber ? "has-error" : ""}"><label class="field">${t("vatNumber")}</label>
+            <input value="${esc(docForm.manualCustomer.vatNumber)}" oninput="updateManualCustomer('vatNumber', this.value)">${fieldError(docErrors, "vatNumber")}</div>
+          <div class="field-wrap"><label class="field">${t("address")}</label>
+            <input value="${esc(docForm.manualCustomer.address)}" oninput="updateManualCustomer('address', this.value)"></div>
+        </div>
+      ` : ""}
       <div class="item-row" style="font-size:12px; color: var(--text-muted);"><span>${t("product")}</span><span>${t("unit")}</span><span>${t("qty")}</span><span>${t("price")}</span><span></span><span></span></div>
       ${docForm.items.map((it, idx) => {
         const src = lineSourceValue(it);
