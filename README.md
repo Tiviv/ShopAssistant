@@ -63,6 +63,24 @@ This version fixes both by moving storage to a Supabase project:
 settings, the category list, products, customers, every document, and the cash
 register's closings and retail entries.
 
+**Изтегли справка (XLSX)** is a separate button for a separate job: a real
+`.xlsx` workbook with six sheets — products, customers, documents, document
+lines, cash register by day, and retail sales — meant for the accountant or for
+reading in a spreadsheet. It is *not* a backup: Excel cannot represent an
+invoice's nested lines, and a spreadsheet round-trip quietly mangles ЕИК
+numbers, IBANs and dates. Restoring is what the JSON backup is for.
+
+Two details that matter for Bulgarian data. Identifiers — ЕИК, ДДС number, IBAN,
+phone — are written as text cells, so Excel cannot turn `0888123456` into
+`888123456` or a long ЕИК into `1.23457E+12`. Money and quantities are written
+as real numbers, so they still add up. The "document lines" sheet flattens each
+invoice's line items into one row apiece, which is the shape a spreadsheet can
+actually pivot on.
+
+The workbook is assembled in the app itself — an `.xlsx` is a ZIP of XML parts,
+so no spreadsheet library is loaded and the app stays a single file with no
+extra dependency.
+
 **Качи файл** reads that file back, in one of two modes:
 
 - **Добави към текущите** (default) — nothing is deleted. A record is skipped

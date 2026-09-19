@@ -422,6 +422,14 @@ const TRANSLATIONS = {
     downloadBackupTitle: "Изтегляне на резервно копие",
     downloadBackupHint: "Препоръчително веднъж месечно, като допълнителна застраховка извън облака.",
     downloadBackupBtn: "Изтегли резервно копие (JSON)",
+    excelTitle: "Справка за Excel", excelBtn: "Изтегли справка (XLSX)",
+    excelHint: "Файл с отделни листове за продукти, клиенти, документи, редове по документи и каса. За счетоводителя или за преглед в таблица — за възстановяване служи резервното копие горе.",
+    sheetProducts: "Продукти", sheetCustomers: "Клиенти", sheetDocuments: "Документи",
+    sheetLines: "Редове по документи", sheetClosings: "Каса по дни", sheetEntries: "Продажби на дребно",
+    colDocType: "Вид", colRelated: "Към фактура №", colTurnoverCash: "Оборот в брой",
+    colTurnoverCard: "Оборот с карта", colTurnoverBank: "Оборот по банка", colDayTotal: "Общо за деня",
+    colInvoiceCount: "Брой фактури", colEntryCount: "Брой продажби", colAutoClosed: "Авто-приключен",
+    colLineLabel: "Продукт / Отдел", colLineSum: "Сума", excelEmpty: "Няма данни за изнасяне.",
     uploadTitle: "Качване на данни от файл",
     uploadHint: "Избери JSON файл — резервно копие от това приложение, стар офлайн бекъп, или каталог с продукти.",
     uploadBtn: "Качи файл (JSON)",
@@ -602,6 +610,14 @@ const TRANSLATIONS = {
     downloadBackupTitle: "Download a backup",
     downloadBackupHint: "Worth doing monthly, as extra insurance outside the cloud.",
     downloadBackupBtn: "Download backup (JSON)",
+    excelTitle: "Excel report", excelBtn: "Download report (XLSX)",
+    excelHint: "A file with separate sheets for products, customers, documents, document lines and the cash register. For your accountant or for reading in a spreadsheet \u2014 restoring is what the backup above is for.",
+    sheetProducts: "Products", sheetCustomers: "Customers", sheetDocuments: "Documents",
+    sheetLines: "Document lines", sheetClosings: "Cash register by day", sheetEntries: "Retail sales",
+    colDocType: "Type", colRelated: "Against invoice No.", colTurnoverCash: "Cash takings",
+    colTurnoverCard: "Card takings", colTurnoverBank: "Bank takings", colDayTotal: "Day total",
+    colInvoiceCount: "Invoices", colEntryCount: "Retail sales", colAutoClosed: "Auto-closed",
+    colLineLabel: "Product / Department", colLineSum: "Amount", excelEmpty: "There is nothing to export.",
     uploadTitle: "Import data from a file",
     uploadHint: "Pick a JSON file \u2014 a backup from this app, an old offline backup, or a product catalog.",
     uploadBtn: "Upload file (JSON)",
@@ -1870,6 +1886,172 @@ function exportDocsCSV(docType) {
   const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
   downloadBlob("﻿" + csv, "text/csv;charset=utf-8;", `${docType === "invoice" ? "fakturi" : "oferti"}_${todayStr()}.csv`);
 }
+// ---------- XLSX export ----------
+// An .xlsx is a ZIP of XML parts, so it can be built here rather than pulling in
+// a spreadsheet library: the app stays one file with no extra dependency. Entries
+// are stored uncompressed, which Excel, LibreOffice and Google Sheets all accept.
+function crc32(bytes) {
+  let table = crc32.table;
+  if (!table) {
+    table = crc32.table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      table[n] = c >>> 0;
+    }
+  }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ table[(crc ^ bytes[i]) & 0xFF];
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function zipStore(files) {
+  const enc = new TextEncoder();
+  const u16 = n => [n & 0xFF, (n >>> 8) & 0xFF];
+  const u32 = n => [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF];
+  const parts = [], central = [];
+  let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), data = enc.encode(f.xml), crc = crc32(data);
+    // 0x0800 marks the file name as UTF-8; method 0 means stored, not deflated.
+    const head = new Uint8Array([...u32(0x04034b50), ...u16(20), ...u16(0x0800), ...u16(0),
+      ...u16(0), ...u16(0), ...u32(crc), ...u32(data.length), ...u32(data.length),
+      ...u16(name.length), ...u16(0)]);
+    parts.push(head, name, data);
+    central.push({ name, crc, len: data.length, offset });
+    offset += head.length + name.length + data.length;
+  }
+  const cd = [];
+  for (const e of central) {
+    cd.push(...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0),
+      ...u32(e.crc), ...u32(e.len), ...u32(e.len), ...u16(e.name.length),
+      ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(e.offset), ...e.name);
+  }
+  const cdBytes = new Uint8Array(cd);
+  parts.push(cdBytes, new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0),
+    ...u16(central.length), ...u16(central.length), ...u32(cdBytes.length), ...u32(offset), ...u16(0)]));
+  return new Blob(parts, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+function xmlEsc(v) {
+  return String(v == null ? "" : v)
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function colLetter(i) {
+  let s = "";
+  for (i += 1; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + (i - 1) % 26) + s;
+  return s;
+}
+// A cell is written as a number only when it is meant to be arithmetic. Everything
+// else goes out as an inline string, which is what keeps ЕИК, ДДС numbers, IBANs
+// and phone numbers from being turned into 1.23457E+12 by Excel.
+function cellXml(ref, value, bold) {
+  const st = bold ? ' s="1"' : "";
+  if (typeof value === "number" && Number.isFinite(value)) return `<c r="${ref}"${st}><v>${value}</v></c>`;
+  const text = xmlEsc(value);
+  if (!text) return `<c r="${ref}"${st}/>`;
+  return `<c r="${ref}"${st} t="inlineStr"><is><t xml:space="preserve">${text}</t></is></c>`;
+}
+function sheetXml(rows) {
+  const body = rows.map((cells, r) => `<row r="${r + 1}">` +
+    cells.map((v, c) => cellXml(colLetter(c) + (r + 1), v, r === 0)).join("") + "</row>").join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
+}
+function safeSheetName(name, used) {
+  let n = String(name).replace(/[\[\]:*?\/\\]/g, " ").slice(0, 31).trim() || "Sheet";
+  let i = 2;
+  while (used.has(n.toLowerCase())) n = (n.slice(0, 28) + " " + i++).trim();
+  used.add(n.toLowerCase());
+  return n;
+}
+function buildWorkbook(sheets) {
+  const used = new Set();
+  const named = sheets.map(sh => ({ name: safeSheetName(sh.name, used), rows: sh.rows }));
+  const files = [
+    { name: "[Content_Types].xml", xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+      `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+      `<Default Extension="xml" ContentType="application/xml"/>` +
+      `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
+      `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>` +
+      named.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("") +
+      `</Types>` },
+    { name: "_rels/.rels", xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>` +
+      `</Relationships>` },
+    { name: "xl/workbook.xml", xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>` +
+      named.map((sh, i) => `<sheet name="${xmlEsc(sh.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("") +
+      `</sheets></workbook>` },
+    { name: "xl/_rels/workbook.xml.rels", xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      named.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("") +
+      `<Relationship Id="rId${named.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
+      `</Relationships>` },
+    { name: "xl/styles.xml", xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+      `<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>` +
+      `<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>` +
+      `<borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs>` +
+      `<cellXfs count="2"><xf fontId="0" fillId="0" borderId="0" xfId="0"/><xf fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>` +
+      `</styleSheet>` }
+  ];
+  named.forEach((sh, i) => files.push({ name: `xl/worksheets/sheet${i + 1}.xml`, xml: sheetXml(sh.rows) }));
+  return zipStore(files);
+}
+
+function docTypeLabel(kind) {
+  return kind === "invoice" ? t("docInvoice") : kind === "offer" ? t("docOffer") : t("docCredit");
+}
+function exportExcel() {
+  const yes = lang === "en" ? "yes" : "да", no = lang === "en" ? "no" : "не";
+  const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  const docs = [...state.documents].sort((a, b) =>
+    a.date === b.date ? a.number - b.number : a.date.localeCompare(b.date));
+
+  const sheets = [
+    { name: t("sheetProducts"), rows: [[t("name"), t("category"), t("unit"), t("price"), t("stock")],
+      ...state.products.map(p => [p.name, categoryLabel(p.category), unitLabel(p.unit), num(p.price),
+        p.stock == null ? "" : num(p.stock)])] },
+    { name: t("sheetCustomers"), rows: [[t("nameCompany"), t("eik"), t("vatNumber"), t("address"), t("phone"), t("email")],
+      ...state.customers.map(c => [c.name, c.eik, c.vatNumber, c.address, c.phone, c.email])] },
+    { name: t("sheetDocuments"), rows: [[t("colDocType"), t("numberShort"), t("date"), t("client"), t("eik"),
+      t("taxBase"), t("vatLabel"), t("total"), t("status"), t("payment"), t("colRelated")],
+      ...docs.map(d => [docTypeLabel(d.docType), num(d.number), d.date, d.customerName,
+        (d.customerSnapshot && d.customerSnapshot.eik) || "", num(d.subtotal), num(d.vatAmount), num(d.total),
+        d.paid ? yes : no, paymentLabel(d.paymentMethod), d.relatedInvoiceNumber ? num(d.relatedInvoiceNumber) : ""])] },
+    // The line sheet is the nested part of a document flattened out, which is the
+    // shape an accountant can actually pivot on.
+    { name: t("sheetLines"), rows: [[t("colDocType"), t("numberShort"), t("date"), t("client"),
+      t("colLineLabel"), t("unit"), t("qty"), t("unitPrice"), t("colLineSum")],
+      ...docs.flatMap(d => (d.items || []).filter(it => it.name).map(it => [
+        docTypeLabel(d.docType), num(d.number), d.date, d.customerName,
+        it.category ? categoryLabel(it.category) : it.name,
+        it.amountMode ? "" : unitLabel(it.unit),
+        it.amountMode ? "" : num(it.qty),
+        it.amountMode ? "" : num(it.price),
+        num(it.qty) * num(it.price)]))] },
+    { name: t("sheetClosings"), rows: [[t("date"), t("colTurnoverCash"), t("colTurnoverCard"), t("colTurnoverBank"),
+      t("colDayTotal"), t("colInvoiceCount"), t("colEntryCount"), t("countedCol"), t("diffCol"), t("colAutoClosed"), t("note")],
+      ...[...state.cashClosings].sort((a, b) => a.date.localeCompare(b.date)).map(c => {
+        const dt = dayTotals(c.date, c);
+        return [c.date, num(dt.byMethod.cash), num(dt.byMethod.card), num(dt.byMethod.bank), num(dt.total),
+          num(dt.invoiceCount), num(dt.entryCount),
+          c.autoClosed ? "" : num(c.countedCash),
+          c.autoClosed ? "" : num(c.countedCash) - num(dt.byMethod.cash),
+          c.autoClosed ? yes : no, c.note];
+      })] },
+    { name: t("sheetEntries"), rows: [[t("date"), t("amount"), t("paymentMethod"), t("note")],
+      ...[...state.cashEntries].sort((a, b) => a.date.localeCompare(b.date))
+        .map(c => [c.date, num(c.amount), paymentLabel(c.paymentMethod), c.note])] }
+  ];
+
+  if (sheets.every(sh => sh.rows.length <= 1)) { alert(t("excelEmpty")); return; }
+  downloadBlob(buildWorkbook(sheets), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    `shopassistant-${todayStr()}.xlsx`);
+}
+
 function downloadBlob(content, mime, filename) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -2738,6 +2920,11 @@ function renderBackup() {
       <h3 style="margin-top:0;">${t("downloadBackupTitle")}</h3>
       <p class="muted">${t("downloadBackupHint")}</p>
       <button class="primary" onclick="downloadBackup()">${t("downloadBackupBtn")}</button>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">${t("excelTitle")}</h3>
+      <p class="muted">${t("excelHint")}</p>
+      <button onclick="exportExcel()">${t("excelBtn")}</button>
     </div>
     <div class="card">
       <h3 style="margin-top:0;">${t("uploadTitle")}</h3>
