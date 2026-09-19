@@ -57,6 +57,38 @@ This version fixes both by moving storage to a Supabase project:
    from before — or an old backup exported from `legacy-offline/index.html`,
    to migrate existing data in.
 
+### Backup and restore
+
+**Изтегли резервно копие** writes the whole account to one JSON file: company
+settings, the category list, products, customers, every document, and the cash
+register's closings and retail entries.
+
+**Качи файл** reads that file back, in one of two modes:
+
+- **Добави към текущите** (default) — nothing is deleted. A record is skipped
+  only when it matches an existing one *exactly*: every field a person could
+  have typed, compared character by character, with money normalised to two
+  decimals. A one-cent difference, a changed note, an extra space in an address
+  — any of those make it a different record, and it is added rather than
+  silently merged. Ids and timestamps are ignored in the comparison, since they
+  differ on every install and would make every record look new.
+- **Замени всичко** — deletes everything in the cloud and leaves only the file's
+  contents. It asks for the word `ЗАМЕНИ` / `REPLACE` to be typed, after showing
+  exactly how many records of each kind will be destroyed.
+
+Before a replace deletes anything, the current data is saved twice: a backup
+file is downloaded, and a snapshot is kept inside the app. That snapshot puts a
+**Върни предишното състояние** card on this tab, which restores the data exactly
+as it was just before the replace — so an import into the wrong account is one
+click to undo, without having to find the downloaded file.
+
+Two things the import is careful about. Documents are re-linked to their
+customer rows by name and ЕИК, rather than keeping only a name. And the invoice,
+offer and credit-note counters only ever move *forward* — taking the highest of
+what the file says, what the account already had, and the highest number
+actually imported — because rolling a counter back would eventually hand out an
+invoice number that already exists on paper.
+
 ### Invoicing by department
 
 A line on an invoice or quote can be a **whole department** instead of a

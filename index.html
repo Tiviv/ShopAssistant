@@ -410,10 +410,28 @@ const TRANSLATIONS = {
     downloadBackupHint: "Препоръчително веднъж месечно, като допълнителна застраховка извън облака.",
     downloadBackupBtn: "Изтегли резервно копие (JSON)",
     uploadTitle: "Качване на данни от файл",
-    uploadHint: "Избери JSON файл (стар офлайн бекъп, или каталог с продукти) — данните ще се добавят към облака, без да трият текущите.",
+    uploadHint: "Избери JSON файл — резервно копие от това приложение, стар офлайн бекъп, или каталог с продукти.",
     uploadBtn: "Качи файл (JSON)",
-    importConfirm: "Ще се добавят {p} продукта, {c} клиента и {d} документа към текущите данни в облака (нищо няма да се изтрие). Продължи?",
-    importSuccess: "Данните са качени успешно.",
+    importModeTitle: "Какво да стане с текущите данни",
+    importModeAdd: "Добави към текущите", importModeReplace: "Замени всичко",
+    importModeAddHint: "Нищо не се изтрива. Записи, които съвпадат до последния знак с вече съществуващи, се прескачат, за да не се дублират.",
+    importModeReplaceHint: "Изтрива всичко в облака и оставя само съдържанието на файла. Преди това се запазва копие на текущото състояние.",
+    importPlanTitle: "Преглед на внасянето",
+    importPlanAdd: "Ще се добавят:", importPlanSkip: "Ще се прескочат като идентични:",
+    importPlanDelete: "ЩЕ СЕ ИЗТРИЯТ безвъзвратно:",
+    importPlanRow: "{n} {what}",
+    thingProducts: "продукта", thingCustomers: "клиента", thingDocuments: "документа",
+    thingClosings: "приключвания на каса", thingEntries: "продажби на дребно",
+    importNothingNew: "Всички записи във файла вече съществуват непроменени. Няма какво да се внесе.",
+    replaceWarning: "ВНИМАНИЕ: това изтрива всички данни в облака и ги заменя със съдържанието на файла.\n\n{plan}\n\nПреди изтриването ще се свали резервно копие и ще се запази състоянието в приложението.\n\nЗа да потвърдите, напишете ЗАМЕНИ:",
+    replaceTypeWord: "ЗАМЕНИ", replaceAborted: "Замяната е отказана. Нищо не е променено.",
+    importDone: "Готово. Внесени: {added}. Прескочени като идентични: {skipped}.",
+    snapshotSaved: "Състоянието отпреди замяната е запазено.",
+    restoreTitle: "Връщане към състоянието отпреди замяната",
+    restoreHint: "Запазено на {when}. Връща данните точно както бяха непосредствено преди последната замяна.",
+    restoreBtn: "Върни предишното състояние", restoreConfirm: "Да се върнат данните отпреди замяната от {when}? Текущите данни ще бъдат заменени.",
+    restoreDone: "Данните са върнати към състоянието отпреди замяната.",
+    conflictingClosings: "{n} приключвания на каса бяха прескочени, защото за тези дни вече има приключване.",
     importFail: "Файлът не изглежда да е валиден резервен файл, или качването се провали: "
   },
   en: {
@@ -559,10 +577,28 @@ const TRANSLATIONS = {
     downloadBackupHint: "Worth doing monthly, as extra insurance outside the cloud.",
     downloadBackupBtn: "Download backup (JSON)",
     uploadTitle: "Import data from a file",
-    uploadHint: "Pick a JSON file (an old offline backup, or a product catalog) — the data is added to the cloud without deleting anything.",
+    uploadHint: "Pick a JSON file \u2014 a backup from this app, an old offline backup, or a product catalog.",
     uploadBtn: "Upload file (JSON)",
-    importConfirm: "{p} products, {c} customers and {d} documents will be added to your current cloud data (nothing will be deleted). Continue?",
-    importSuccess: "Data imported successfully.",
+    importModeTitle: "What happens to the data you already have",
+    importModeAdd: "Add to what's there", importModeReplace: "Replace everything",
+    importModeAddHint: "Nothing is deleted. Records that match an existing one down to the last character are skipped, so they don't pile up as duplicates.",
+    importModeReplaceHint: "Deletes everything in the cloud and leaves only what's in the file. A copy of the current state is saved first.",
+    importPlanTitle: "Import preview",
+    importPlanAdd: "Will be added:", importPlanSkip: "Will be skipped as identical:",
+    importPlanDelete: "Will be PERMANENTLY DELETED:",
+    importPlanRow: "{n} {what}",
+    thingProducts: "products", thingCustomers: "customers", thingDocuments: "documents",
+    thingClosings: "cash closings", thingEntries: "retail sales",
+    importNothingNew: "Every record in the file already exists unchanged. There is nothing to import.",
+    replaceWarning: "WARNING: this deletes all your cloud data and replaces it with the contents of the file.\n\n{plan}\n\nA backup will be downloaded and the current state saved in the app before anything is deleted.\n\nTo confirm, type REPLACE:",
+    replaceTypeWord: "REPLACE", replaceAborted: "Replace cancelled. Nothing was changed.",
+    importDone: "Done. Imported: {added}. Skipped as identical: {skipped}.",
+    snapshotSaved: "The state from before the replace has been saved.",
+    restoreTitle: "Undo the last replace",
+    restoreHint: "Saved on {when}. Puts the data back exactly as it was just before the last replace.",
+    restoreBtn: "Restore previous state", restoreConfirm: "Restore the data from before the replace on {when}? Your current data will be replaced.",
+    restoreDone: "The data has been restored to its state before the replace.",
+    conflictingClosings: "{n} cash closings were skipped because those days already have a closing.",
     importFail: "That doesn't look like a valid backup file, or the upload failed: "
   }
 };
@@ -2258,53 +2294,294 @@ function downloadBackup() {
   downloadBlob(JSON.stringify(state, null, 2), "application/json", `shopassistant-backup-${todayStr()}.json`);
 }
 function triggerImport() { document.getElementById("import-file-input").click(); }
+
+// ---------- strict duplicate detection ----------
+// Two records count as the same only when every field a person could have typed
+// matches exactly. Ids and timestamps are deliberately excluded: they differ on
+// every install, so including them would make every record look new. Numbers are
+// compared at two decimals so 2.4 and "2.40" match, but 2.41 does not.
+function normStr(v) { return String(v == null ? "" : v).trim(); }
+function normNum(v) { const n = Number(v); return Number.isFinite(n) ? n.toFixed(2) : ""; }
+function productKey(p) {
+  return JSON.stringify([normStr(p.name), normStr(p.category), normStr(p.unit), normNum(p.price),
+    p.stock == null || p.stock === "" ? null : normNum(p.stock)]);
+}
+function customerKey(c) {
+  return JSON.stringify([normStr(c.name), normStr(c.eik), normStr(c.vatNumber),
+    normStr(c.address), normStr(c.phone), normStr(c.email)]);
+}
+function lineKey(it) {
+  return [normStr(it.category), normStr(it.name), normStr(it.unit),
+    normNum(it.qty), normNum(it.price), !!it.amountMode].join("\u0001");
+}
+function documentKey(d) {
+  return JSON.stringify([normStr(d.docType), Number(d.number), normStr(d.date), normStr(d.customerName),
+    normNum(d.vatRate), normNum(d.subtotal), normNum(d.vatAmount), normNum(d.total), !!d.paid,
+    normStr(d.paymentMethod || "cash"),
+    d.relatedInvoiceNumber == null ? null : Number(d.relatedInvoiceNumber),
+    (d.items || []).map(lineKey)]);
+}
+function closingKey(c) { return JSON.stringify([normStr(c.date), normNum(c.countedCash), normStr(c.note)]); }
+function entryKey(c) {
+  return JSON.stringify([normStr(c.date), normNum(c.amount), normStr(c.paymentMethod || "cash"), normStr(c.note)]);
+}
+
+const IMPORT_PARTS = [
+  { prop: "products",     key: productKey,  thing: "thingProducts" },
+  { prop: "customers",    key: customerKey, thing: "thingCustomers" },
+  { prop: "documents",    key: documentKey, thing: "thingDocuments" },
+  { prop: "cashClosings", key: closingKey,  thing: "thingClosings" },
+  { prop: "cashEntries",  key: entryKey,    thing: "thingEntries" }
+];
+
+// Splits the file into what is genuinely new and what already exists untouched.
+function planImport(imported) {
+  const plan = { parts: {}, totalNew: 0, totalSame: 0 };
+  for (const part of IMPORT_PARTS) {
+    const incoming = Array.isArray(imported[part.prop]) ? imported[part.prop] : [];
+    const existing = new Set((state[part.prop] || []).map(part.key));
+    const fresh = [], same = [];
+    for (const rec of incoming) (existing.has(part.key(rec)) ? same : fresh).push(rec);
+    plan.parts[part.prop] = { fresh, same, thing: part.thing, existingCount: (state[part.prop] || []).length };
+    plan.totalNew += fresh.length;
+    plan.totalSame += same.length;
+  }
+  return plan;
+}
+function planLines(plan, pick) {
+  return IMPORT_PARTS
+    .map(part => ({ n: pick(plan.parts[part.prop]), what: t(part.thing) }))
+    .filter(r => r.n > 0)
+    .map(r => "  \u2022 " + t("importPlanRow", r))
+    .join("\n");
+}
+
+// ---------- the safety net for "replace" ----------
+const SNAPSHOT_KEY = "shopERP_pre_replace_snapshot";
+function saveSnapshot() {
+  try {
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), state }));
+    return true;
+  } catch (e) { console.error("could not store pre-replace snapshot", e); return false; }
+}
+function loadSnapshot() {
+  try { return JSON.parse(localStorage.getItem(SNAPSHOT_KEY)) || null; } catch (e) { return null; }
+}
+function snapshotWhen(snap) {
+  const d = new Date(snap.savedAt);
+  return isNaN(d) ? snap.savedAt : d.toLocaleString(lang === "en" ? "en-IE" : "bg-BG");
+}
+
+let importMode = "add";
+function setImportMode(m) { importMode = m; render(); }
+
 async function handleImportFile(input) {
   const file = input.files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async e => {
-    try {
-      const imported = JSON.parse(e.target.result);
-      if (!imported.products && !imported.customers && !imported.documents) throw new Error("bad format");
-      const nProd = (imported.products || []).length, nCust = (imported.customers || []).length, nDoc = (imported.documents || []).length;
-      if (!confirm(t("importConfirm", { p: nProd, c: nCust, d: nDoc }))) return;
-
-      if (imported.products && imported.products.length) {
-        const rows = imported.products.map(p => ({ owner_id: session.user.id, name: p.name, category: p.category || "", unit: p.unit || "", price: Number(p.price) || 0, stock: p.stock === "" || p.stock == null ? null : Number(p.stock) }));
-        const { error } = await supabaseClient.from("products").insert(rows);
-        if (error) throw error;
-      }
-      if (imported.customers && imported.customers.length) {
-        const rows = imported.customers.map(c => ({ owner_id: session.user.id, ...customerObjToRow(c) }));
-        const { error } = await supabaseClient.from("customers").insert(rows);
-        if (error) throw error;
-      }
-      if (imported.documents && imported.documents.length) {
-        const rows = imported.documents.map(d => ({
-          owner_id: session.user.id, doc_type: d.docType, number: d.number, date: d.date,
-          customer_name: d.customerName || "", customer_snapshot: d.customerSnapshot || null,
-          items: d.items || [], vat_rate: d.vatRate, subtotal: d.subtotal, vat_amount: d.vatAmount, total: d.total,
-          paid: !!d.paid, related_invoice_number: d.relatedInvoiceNumber || null, payment_method: d.paymentMethod || "cash"
-        }));
-        const { error } = await supabaseClient.from("documents").insert(rows);
-        if (error) throw error;
-        const maxByType = { invoice: 0, offer: 0, credit: 0 };
-        rows.forEach(r => { if (r.number > maxByType[r.doc_type]) maxByType[r.doc_type] = r.number; });
-        const updates = {};
-        if (maxByType.invoice >= state.settings.nextInvoiceNo) updates.next_invoice_no = maxByType.invoice + 1;
-        if (maxByType.offer >= state.settings.nextOfferNo) updates.next_offer_no = maxByType.offer + 1;
-        if (maxByType.credit >= state.settings.nextCreditNo) updates.next_credit_no = maxByType.credit + 1;
-        if (Object.keys(updates).length) await supabaseClient.from("settings").update(updates).eq("owner_id", session.user.id);
-      }
-      await loadAllData();
-      alert(t("importSuccess"));
-    } catch (err) {
-      console.error(err);
-      alert(t("importFail") + err.message);
-    }
-  };
-  reader.readAsText(file);
+  const text = await new Promise((res, rej) => {
+    // FileReader rather than file.text(): the latter needs a newer Safari than
+    // some of the phones this runs on.
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(r.error || new Error("read failed"));
+    r.readAsText(file);
+  });
+  input.value = "";                       // so picking the same file twice still fires
+  let imported;
+  try { imported = JSON.parse(text); } catch (e) { alert(t("importFail") + e.message); return; }
+  if (!imported || (!imported.products && !imported.customers && !imported.documents)) {
+    alert(t("importFail") + "bad format");
+    return;
+  }
+  await runImport(imported, importMode);
 }
+
+async function runImport(imported, mode, opts) {
+  const preconfirmed = !!(opts && opts.preconfirmed);
+  const plan = planImport(imported);
+  if (mode === "add" && plan.totalNew === 0) { alert(t("importNothingNew")); return false; }
+
+  if (mode === "replace") {
+    const deleting = IMPORT_PARTS
+      .map(part => ({ n: plan.parts[part.prop].existingCount, what: t(part.thing) }))
+      .filter(r => r.n > 0).map(r => "  \u2022 " + t("importPlanRow", r)).join("\n");
+    const body = `${t("importPlanDelete")}\n${deleting || "  \u2014"}\n\n${t("importPlanAdd")}\n${
+      IMPORT_PARTS.map(part => ({ n: (imported[part.prop] || []).length, what: t(part.thing) }))
+        .filter(r => r.n > 0).map(r => "  \u2022 " + t("importPlanRow", r)).join("\n") || "  \u2014"}`;
+    if (!preconfirmed) {
+      const typed = prompt(t("replaceWarning", { plan: body }));
+      if (normStr(typed).toUpperCase() !== t("replaceTypeWord")) { alert(t("replaceAborted")); return false; }
+    }
+    // Two copies before anything is destroyed: a file they keep, and a snapshot
+    // inside the app so undoing does not depend on finding that file again.
+    downloadBackup();
+    saveSnapshot();
+  } else {
+    const body = `${t("importPlanAdd")}\n${planLines(plan, x => x.fresh.length) || "  \u2014"}` +
+      (plan.totalSame ? `\n\n${t("importPlanSkip")}\n${planLines(plan, x => x.same.length)}` : "");
+    if (!confirm(`${t("importPlanTitle")}\n\n${body}`)) return false;
+  }
+
+  try {
+    const uid = session.user.id;
+    if (mode === "replace") {
+      for (const table of ["documents", "cash_entries", "cash_closings", "products", "customers"]) {
+        const { error } = await supabaseClient.from(table).delete().eq("owner_id", uid);
+        if (error) throw error;
+      }
+    }
+    const take = prop => mode === "replace"
+      ? (Array.isArray(imported[prop]) ? imported[prop] : [])
+      : plan.parts[prop].fresh;
+
+    const products = take("products");
+    if (products.length) {
+      const { error } = await supabaseClient.from("products").insert(products.map(p => ({
+        owner_id: uid, name: p.name, category: p.category || "", unit: p.unit || "",
+        price: Number(p.price) || 0, stock: p.stock === "" || p.stock == null ? null : Number(p.stock)
+      })));
+      if (error) throw error;
+    }
+    const customers = take("customers");
+    if (customers.length) {
+      const { error } = await supabaseClient.from("customers").insert(
+        customers.map(c => ({ owner_id: uid, ...customerObjToRow(c) })));
+      if (error) throw error;
+    }
+
+    // Customers must be on hand before documents, so each document can be tied
+    // back to its customer row instead of keeping only a name.
+    const { data: custRows } = await supabaseClient.from("customers").select("*").eq("owner_id", uid);
+    const byIdentity = new Map();
+    (custRows || []).forEach(r => {
+      byIdentity.set(normStr(r.name).toLowerCase() + "|" + normStr(r.eik), r.id);
+      if (!byIdentity.has(normStr(r.name).toLowerCase())) byIdentity.set(normStr(r.name).toLowerCase(), r.id);
+    });
+    const linkCustomer = d => {
+      const snap = d.customerSnapshot || {};
+      const name = normStr(snap.name || d.customerName).toLowerCase();
+      if (!name) return null;
+      return byIdentity.get(name + "|" + normStr(snap.eik)) || byIdentity.get(name) || null;
+    };
+
+    const documents = take("documents");
+    if (documents.length) {
+      const { error } = await supabaseClient.from("documents").insert(documents.map(d => ({
+        owner_id: uid, doc_type: d.docType, number: d.number, date: d.date,
+        customer_id: linkCustomer(d), customer_name: d.customerName || "",
+        customer_snapshot: d.customerSnapshot || null, items: d.items || [],
+        vat_rate: d.vatRate, subtotal: d.subtotal, vat_amount: d.vatAmount, total: d.total,
+        paid: !!d.paid, related_invoice_number: d.relatedInvoiceNumber || null,
+        payment_method: d.paymentMethod || "cash"
+      })));
+      if (error) throw error;
+    }
+
+    // One closing per day is a primary key, so in add mode a day that already
+    // has one is left alone rather than failing the whole import.
+    let conflicting = 0;
+    let closings = take("cashClosings");
+    if (mode !== "replace") {
+      const taken = new Set((state.cashClosings || []).map(c => c.date));
+      const before = closings.length;
+      closings = closings.filter(c => !taken.has(c.date));
+      conflicting = before - closings.length;
+    }
+    if (closings.length) {
+      const { error } = await supabaseClient.from("cash_closings").insert(closings.map(c => ({
+        owner_id: uid, date: c.date, counted_cash: Number(c.countedCash) || 0, note: c.note || ""
+      })));
+      if (error) throw error;
+    }
+    const entries = take("cashEntries");
+    if (entries.length) {
+      const { error } = await supabaseClient.from("cash_entries").insert(entries.map(c => ({
+        owner_id: uid, date: c.date, amount: Number(c.amount) || 0,
+        payment_method: c.paymentMethod || "cash", note: c.note || ""
+      })));
+      if (error) throw error;
+    }
+
+    await restoreSettings(imported, mode, documents);
+    await loadAllData();
+    const added = planLines({ parts: Object.fromEntries(IMPORT_PARTS.map(part =>
+      [part.prop, { fresh: take(part.prop), same: [], thing: part.thing }])) }, x => x.fresh.length)
+      .replace(/\n/g, " ").replace(/ {2}\u2022 /g, " ").trim();
+    alert(t("importDone", { added: added || "0", skipped: mode === "replace" ? 0 : plan.totalSame })
+      + (conflicting ? "\n\n" + t("conflictingClosings", { n: conflicting }) : "")
+      + (mode === "replace" ? "\n\n" + t("snapshotSaved") : ""));
+  } catch (err) {
+    console.error(err);
+    alert(t("importFail") + err.message);
+    render();
+    return false;
+  }
+  render();
+  return true;
+}
+
+// Company details and the category list are restored too — they are part of the
+// backup. In add mode they only fill gaps, so importing a colleague's catalogue
+// cannot quietly rewrite your own company header.
+async function restoreSettings(imported, mode, insertedDocs) {
+  const uid = session.user.id;
+  const src = imported.settings || {};
+  const patch = {};
+  const fields = { companyName: "company_name", eik: "eik", vatNumber: "vat_number",
+    address: "address", mol: "mol", iban: "iban" };
+  for (const [objKey, col] of Object.entries(fields)) {
+    const incoming = normStr(src[objKey]);
+    if (!incoming) continue;
+    if (mode === "replace" || !normStr(state.settings[objKey])) patch[col] = incoming;
+  }
+
+  const incomingCats = (() => {
+    const v = src.categories;
+    if (Array.isArray(v)) return { custom: v.slice(), hidden: [] };
+    if (v && typeof v === "object") {
+      return { custom: Array.isArray(v.custom) ? v.custom.slice() : [],
+               hidden: Array.isArray(v.hidden) ? v.hidden.slice() : [] };
+    }
+    return null;
+  })();
+  if (incomingCats) {
+    if (mode === "replace") patch.categories = incomingCats;
+    else {
+      const cur = catConfig();
+      const union = a => [...new Set(a)];
+      // Merging, not overwriting: a category you added stays even if the file
+      // has never heard of it, and a category the file hides stays visible here.
+      patch.categories = { custom: union([...cur.custom, ...incomingCats.custom]), hidden: cur.hidden };
+    }
+  }
+
+  // Counters only ever move forward. Rolling one back would hand out an invoice
+  // number that already exists on paper.
+  const maxOf = type => (insertedDocs || []).reduce((m, d) =>
+    d.docType === type && Number(d.number) > m ? Number(d.number) : m, 0);
+  const counters = { next_invoice_no: ["nextInvoiceNo", "invoice"], next_offer_no: ["nextOfferNo", "offer"],
+    next_credit_no: ["nextCreditNo", "credit"] };
+  for (const [col, [objKey, type]] of Object.entries(counters)) {
+    const candidates = [mode === "replace" ? 1 : Number(state.settings[objKey]) || 1,
+      Number(src[objKey]) || 1, maxOf(type) + 1];
+    const next = Math.max(...candidates);
+    if (next !== Number(state.settings[objKey])) patch[col] = next;
+  }
+
+  if (!Object.keys(patch).length) return;
+  const { error } = await supabaseClient.from("settings").update(patch).eq("owner_id", uid);
+  if (error) throw error;
+}
+
+async function restorePreviousState() {
+  const snap = loadSnapshot();
+  if (!snap || !snap.state) return;
+  // The button already names the date, and this is an undo rather than an
+  // unknown file, so one clear confirmation is enough — no typed keyword.
+  if (!confirm(t("restoreConfirm", { when: snapshotWhen(snap) }))) return;
+  if (await runImport(snap.state, "replace", { preconfirmed: true })) alert(t("restoreDone"));
+}
+
 function renderBackup() {
   return `
     <h2>${t("backupTitle")}</h2>
@@ -2319,9 +2596,31 @@ function renderBackup() {
     <div class="card">
       <h3 style="margin-top:0;">${t("uploadTitle")}</h3>
       <p class="muted">${t("uploadHint")}</p>
+      <div class="field-wrap">
+        <label class="field">${t("importModeTitle")}</label>
+        <select onchange="setImportMode(this.value)">
+          <option value="add" ${importMode === "add" ? "selected" : ""}>${t("importModeAdd")}</option>
+          <option value="replace" ${importMode === "replace" ? "selected" : ""}>${t("importModeReplace")}</option>
+        </select>
+      </div>
+      <p class="muted" style="font-size:12px;">
+        ${importMode === "replace"
+          ? `<strong style="color:var(--danger,#b3261e);">${t("importModeReplaceHint")}</strong>`
+          : t("importModeAddHint")}
+      </p>
       <input type="file" id="import-file-input" accept="application/json" style="display:none" onchange="handleImportFile(this)">
       <button ${offline ? "disabled" : ""} onclick="triggerImport()">${t("uploadBtn")}</button>
     </div>
+    ${(() => {
+      const snap = loadSnapshot();
+      if (!snap || !snap.state) return "";
+      return `
+      <div class="card">
+        <h3 style="margin-top:0;">${t("restoreTitle")}</h3>
+        <p class="muted">${t("restoreHint", { when: esc(snapshotWhen(snap)) })}</p>
+        <button ${offline ? "disabled" : ""} onclick="restorePreviousState()">${t("restoreBtn")}</button>
+      </div>`;
+    })()}
   `;
 }
 
