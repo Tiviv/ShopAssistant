@@ -383,17 +383,30 @@ const TRANSLATIONS = {
     preparedBy: "Съставил", receivedBy: "Получил", mol: "МОЛ",
 
     cashTitle: "Каса", day: "Ден", expectedCash: "Очаквано в брой", expectedCard: "Очаквано с карта",
-    expectedBank: "Очаквано с банков превод", netForDay: "Нетно за деня ({inv} фактури, {ret} продажби на дребно)",
-    dayNotClosed: "Денят още не е приключен.", closeDay: "Приключи деня", editClosing: "Редакция на приключването",
+    expectedBank: "Очаквано с банков превод", netForDay: "Нетно за деня ({inv}, {ret})",
+    invoiceOne: "фактура", invoiceMany: "фактури", retailOne: "продажба на дребно", retailMany: "продажби на дребно",
+    dayNotClosed: "Денят още не е приключен.", closeDay: "Приключи деня",
     countedCashLabel: "Преброена сума в брой (€)", diffVsExpected: "Разлика спрямо очакваното в брой: ",
     saveClosing: "Запази приключване", countedInCash: "Преброено в брой: ", difference: "разлика: ",
-    history: "История", expectedCashCol: "Очаквано в брой", countedCol: "Преброено", diffCol: "Разлика",
+    history: "История", countedCol: "Преброено", diffCol: "Разлика",
     noClosedDays: "Няма приключени дни още.", diffReasonPlaceholder: "напр. причина за разлика",
     retailTitle: "Продажби на дребно (без фактура)", addEntry: "+ Добави постъпление",
     noRetailEntries: "Няма добавени продажби на дребно за деня.", amountEur: "Сума (€)",
     saveEntry: "Запази постъпление", deleteEntryConfirm: "Изтриване на това постъпление?",
     enterValidAmount: "Въведете валидна сума (число > 0).", enterValidCounted: "Въведете валидна преброена сума (число ≥ 0).",
     entryNotePlaceholder: "напр. клиент на място",
+    dayClosedAt: "Денят е приключен на {when}.",
+    autoClosedAt: "Денят е приключен автоматично на {when}.",
+    notCounted: "Касата не е броена за този ден. Отключете деня, ако искате да впишете преброената сума.",
+    savedAtClosing: "Сумите отдолу са записани при приключването и вече не се променят.",
+    totalCash: "Оборот в брой", totalCard: "Оборот с карта", totalBank: "Оборот по банка",
+    totalForDay: "Общо за деня ({inv}, {ret})",
+    reopenDay: "Отключи деня",
+    reopenConfirm: "Да отключим ли деня? Записаните суми се изтриват и после можете да приключите деня отново.",
+    closedDayLocked: "Денят е приключен. За да добавите или изтриете продажба, първо отключете деня.",
+    futureDayNotice: "Бъдещ ден — може да се приключи най-рано в края на самия ден.",
+    historyLast: "История (последните 10 приключени дни)", totalCol: "Общо за деня",
+    closingNeedsSchema: "Базата още няма полетата за записан оборот. Пуснете отново supabase/schema.sql в Supabase.",
 
     reportsTitle: "Справки", monthlyTurnover: "Оборот по месеци", topProducts: "Топ продукти по приход",
     noDataYet: "Няма данни още.",
@@ -550,17 +563,30 @@ const TRANSLATIONS = {
     preparedBy: "Issued by", receivedBy: "Received by", mol: "Resp. person",
 
     cashTitle: "Cash register", day: "Day", expectedCash: "Expected in cash", expectedCard: "Expected by card",
-    expectedBank: "Expected by bank transfer", netForDay: "Net for the day ({inv} invoices, {ret} retail sales)",
-    dayNotClosed: "This day hasn't been closed yet.", closeDay: "Close the day", editClosing: "Edit closing",
+    expectedBank: "Expected by bank transfer", netForDay: "Net for the day ({inv}, {ret})",
+    invoiceOne: "invoice", invoiceMany: "invoices", retailOne: "retail sale", retailMany: "retail sales",
+    dayNotClosed: "This day hasn't been closed yet.", closeDay: "Close the day",
     countedCashLabel: "Counted cash (€)", diffVsExpected: "Difference vs expected cash: ",
     saveClosing: "Save closing", countedInCash: "Counted in cash: ", difference: "difference: ",
-    history: "History", expectedCashCol: "Expected in cash", countedCol: "Counted", diffCol: "Difference",
+    history: "History", countedCol: "Counted", diffCol: "Difference",
     noClosedDays: "No closed days yet.", diffReasonPlaceholder: "e.g. reason for the difference",
     retailTitle: "Retail sales (no invoice)", addEntry: "+ Add entry",
     noRetailEntries: "No retail sales recorded for this day.", amountEur: "Amount (€)",
     saveEntry: "Save entry", deleteEntryConfirm: "Delete this entry?",
     enterValidAmount: "Enter a valid amount (number > 0).", enterValidCounted: "Enter a valid counted amount (number ≥ 0).",
     entryNotePlaceholder: "e.g. walk-in customer",
+    dayClosedAt: "Day closed on {when}.",
+    autoClosedAt: "Day closed automatically on {when}.",
+    notCounted: "The till wasn't counted for this day. Reopen it if you want to enter the counted amount.",
+    savedAtClosing: "The totals below were saved when the day was closed and no longer change.",
+    totalCash: "Cash turnover", totalCard: "Card turnover", totalBank: "Bank turnover",
+    totalForDay: "Total for the day ({inv}, {ret})",
+    reopenDay: "Reopen the day",
+    reopenConfirm: "Reopen this day? The saved totals are removed and you can then close the day again.",
+    closedDayLocked: "This day is closed. Reopen it first to add or delete a sale.",
+    futureDayNotice: "Future day — it can only be closed once the day itself is over.",
+    historyLast: "History (last 10 closed days)", totalCol: "Day total",
+    closingNeedsSchema: "The database doesn't have the saved-turnover columns yet. Re-run supabase/schema.sql in Supabase.",
 
     reportsTitle: "Reports", monthlyTurnover: "Turnover by month", topProducts: "Top products by revenue",
     noDataYet: "No data yet.",
@@ -622,6 +648,8 @@ function categoryLabelIn(l, c) { const k = "cat_" + c; return (TRANSLATIONS[l] &
 function categoryLabel(c) { return categoryLabelIn(lang, c); }
 function paymentLabelIn(l, m) { return tIn(l, "pay_" + (m || "cash")); }
 function paymentLabel(m) { return paymentLabelIn(lang, m); }
+// "1 фактура" but "3 фактури" — Bulgarian (and English) want the singular for one.
+function countLabel(n, oneKey, manyKey) { return n + " " + t(n === 1 ? oneKey : manyKey); }
 function setLang(next) {
   lang = next;
   try { localStorage.setItem(LANG_KEY, next); } catch (e) {}
@@ -637,6 +665,19 @@ function moneyIn(l, n) {
 }
 function money(n) { return moneyIn(lang, n); }
 function todayStr() { return new Date().toISOString().slice(0, 10); }
+// todayStr() reads the UTC date. The till is closed late in the evening, when
+// the shop's own date can already be a day ahead of UTC, and that day still has
+// to be closable — so the cash tab asks for the local date instead.
+function localTodayStr() {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+function dateTimeIn(l, iso) {
+  const d = new Date(iso);
+  if (!iso || isNaN(d.getTime())) return "";
+  return d.toLocaleString(l === "en" ? "en-IE" : "bg-BG", { dateStyle: "short", timeStyle: "short" });
+}
+function dateTime(iso) { return dateTimeIn(lang, iso); }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
 // ---------- field validation ----------
@@ -722,7 +763,18 @@ function docRowToObj(row) {
   };
 }
 function cashClosingRowToObj(row) {
-  return { date: row.date, countedCash: Number(row.counted_cash), note: row.note || "", closedAt: row.closed_at };
+  // total is null on days closed before the app started saving the day's sums;
+  // those fall back to a live recount in dayTotals().
+  return {
+    date: row.date, countedCash: Number(row.counted_cash), note: row.note || "", closedAt: row.closed_at,
+    autoClosed: !!row.auto_closed,
+    totals: row.total == null ? null : {
+      byMethod: { cash: Number(row.total_cash) || 0, card: Number(row.total_card) || 0, bank: Number(row.total_bank) || 0 },
+      total: Number(row.total) || 0,
+      invoiceCount: Number(row.invoice_count) || 0,
+      entryCount: Number(row.entry_count) || 0
+    }
+  };
 }
 function cashEntryRowToObj(row) {
   return { id: row.id, date: row.date, amount: Number(row.amount), paymentMethod: row.payment_method || "cash", note: row.note || "", createdAt: row.created_at };
@@ -854,10 +906,25 @@ async function boot() {
   if (session && !recoveryMode) { await loadAllData(); } else { render(); }
 }
 
+// A day that ended without anyone closing it. The scheduled job in the
+// database closes those overnight; asking for it here as well means forgotten
+// days still get closed on a project where pg_cron could not be enabled. It
+// only ever adds closings for days that are already over, so calling it on
+// every load is safe, and an older database without the function just carries
+// on without auto-closing.
+async function closeForgottenDays() {
+  try {
+    const res = await supabaseClient.rpc("close_my_finished_days");
+    if (res.error) console.warn("Auto-close unavailable:", res.error.message);
+  } catch (e) {
+    console.warn("Auto-close unavailable:", e);
+  }
+}
 async function loadAllData() {
   syncStatus = "syncing"; render();
   try {
     const uidUser = session.user.id;
+    await closeForgottenDays();
     const [settingsRes, productsRes, customersRes, docsRes, cashRes, entriesRes] = await Promise.all([
       supabaseClient.from("settings").select("*").eq("owner_id", uidUser).maybeSingle(),
       supabaseClient.from("products").select("*").eq("owner_id", uidUser).order("name"),
@@ -2058,11 +2125,31 @@ function computeCashSummary(date) {
   const invoiceCount = docs.filter(d => d.docType === "invoice").length;
   return { byMethod, total: docsTotal + entriesTotal, invoiceCount, entries };
 }
+function closingFor(date) { return state.cashClosings.find(c => c.date === date) || null; }
+// What the tab shows for a day: the sums saved when the day was closed, or —
+// for a day still open, or one closed before the app saved its sums — a live
+// count of that day's invoices and retail entries.
+function dayTotals(date, closing) {
+  if (closing && closing.totals) return closing.totals;
+  const s = computeCashSummary(date);
+  return { byMethod: s.byMethod, total: s.total, invoiceCount: s.invoiceCount, entryCount: s.entries.length };
+}
+// PostgREST reports a column the table doesn't have as PGRST204. Here that
+// means the saved-totals columns are missing, i.e. the schema update hasn't
+// been run yet — worth saying plainly instead of showing the raw error.
+function isMissingColumnError(err) {
+  return !!err && (err.code === "PGRST204" || /total_cash|invoice_count/.test(err.message || ""));
+}
 function updateCashViewDate(v) { cashViewDate = v; cashForm = null; cashEntryForm = null; render(); }
-function beginCashEntry() { cashEntryForm = { amount: "", paymentMethod: "cash", note: "" }; render(); }
+function beginCashEntry() {
+  if (closingFor(cashViewDate)) { alert(t("closedDayLocked")); return; }
+  cashEntryForm = { amount: "", paymentMethod: "cash", note: "" };
+  render();
+}
 function updateCashEntryField(field, value) { cashEntryForm[field] = value; }
 function cancelCashEntry() { cashEntryForm = null; render(); }
 async function saveCashEntry() {
+  if (closingFor(cashViewDate)) { alert(t("closedDayLocked")); return; }
   if (!isValidMoney(cashEntryForm.amount) || Number(cashEntryForm.amount) <= 0) { alert(t("enterValidAmount")); return; }
   const row = { owner_id: session.user.id, date: cashViewDate, amount: Number(cashEntryForm.amount), payment_method: cashEntryForm.paymentMethod, note: cashEntryForm.note || "" };
   const res = await supabaseClient.from("cash_entries").insert(row).select().single();
@@ -2072,6 +2159,8 @@ async function saveCashEntry() {
   cacheState(); flashSaved(true); render();
 }
 async function deleteCashEntry(id) {
+  const entry = state.cashEntries.find(e => e.id === id);
+  if (entry && closingFor(entry.date)) { alert(t("closedDayLocked")); return; }
   if (!confirm(t("deleteEntryConfirm"))) return;
   const res = await supabaseClient.from("cash_entries").delete().eq("id", id);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
@@ -2079,20 +2168,39 @@ async function deleteCashEntry(id) {
   cacheState(); flashSaved(true); render();
 }
 function beginCashEdit() {
-  const existing = state.cashClosings.find(c => c.date === cashViewDate);
-  cashForm = existing ? { countedCash: existing.countedCash, note: existing.note } : { countedCash: "", note: "" };
+  if (closingFor(cashViewDate)) { alert(t("closedDayLocked")); return; }
+  if (cashViewDate > localTodayStr()) { alert(t("futureDayNotice")); return; }
+  cashForm = { countedCash: "", note: "" };
   render();
 }
 function updateCashField(field, value) { cashForm[field] = value; }
 function cancelCashEdit() { cashForm = null; render(); }
+// Closing writes the day's sums into the row alongside the counted cash, so a
+// closed day keeps the figures it was closed on even if an invoice for that
+// date is edited later. Reopening the day is the only way to change them.
 async function saveCashClosing() {
   if (!isValidMoney(cashForm.countedCash)) { alert(t("enterValidCounted")); return; }
-  const row = { owner_id: session.user.id, date: cashViewDate, counted_cash: Number(cashForm.countedCash), note: cashForm.note || "", closed_at: new Date().toISOString() };
+  const totals = dayTotals(cashViewDate, null);
+  const row = {
+    owner_id: session.user.id, date: cashViewDate,
+    counted_cash: Number(cashForm.countedCash), note: cashForm.note || "", closed_at: new Date().toISOString(),
+    total_cash: totals.byMethod.cash, total_card: totals.byMethod.card, total_bank: totals.byMethod.bank,
+    total: totals.total, invoice_count: totals.invoiceCount, entry_count: totals.entryCount,
+    auto_closed: false
+  };
   const res = await supabaseClient.from("cash_closings").upsert(row, { onConflict: "owner_id,date" }).select().single();
-  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
+  if (res.error) { flashSaved(false, isMissingColumnError(res.error) ? t("closingNeedsSchema") : t("errorPrefix") + res.error.message); return; }
   const obj = cashClosingRowToObj(res.data);
   const idx = state.cashClosings.findIndex(c => c.date === obj.date);
   if (idx >= 0) state.cashClosings[idx] = obj; else state.cashClosings.push(obj);
+  cashForm = null;
+  cacheState(); flashSaved(true); render();
+}
+async function reopenDay() {
+  if (!confirm(t("reopenConfirm"))) return;
+  const res = await supabaseClient.from("cash_closings").delete().eq("owner_id", session.user.id).eq("date", cashViewDate);
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
+  state.cashClosings = state.cashClosings.filter(c => c.date !== cashViewDate);
   cashForm = null;
   cacheState(); flashSaved(true); render();
 }
@@ -2102,38 +2210,47 @@ function diffLabel(diff) {
 }
 function renderCash() {
   const summary = computeCashSummary(cashViewDate);
-  const existing = state.cashClosings.find(c => c.date === cashViewDate);
+  const closing = closingFor(cashViewDate);
+  const closed = !!closing;
+  const totals = dayTotals(cashViewDate, closing);
+  const future = cashViewDate > localTodayStr();
   const editing = !!cashForm;
   const liveDiff = editing && cashForm.countedCash !== "" && isValidMoney(cashForm.countedCash)
-    ? Number(cashForm.countedCash) - summary.byMethod.cash : null;
-  const history = state.cashClosings.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 14);
+    ? Number(cashForm.countedCash) - totals.byMethod.cash : null;
+  const history = state.cashClosings.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
   return `
     <h2>${t("cashTitle")}</h2>
     <div class="card">
       <div class="field-wrap" style="max-width:220px;"><label class="field">${t("day")}</label><input type="date" value="${cashViewDate}" onchange="updateCashViewDate(this.value)"></div>
+      ${closed ? `<p>${t(closing.autoClosed ? "autoClosedAt" : "dayClosedAt", { when: esc(dateTime(closing.closedAt)) })}<br><span class="muted">${t("savedAtClosing")}</span></p>` : ""}
       <div class="metrics-grid">
-        <div class="metric"><div class="label">${t("expectedCash")}</div><div class="value">${money(summary.byMethod.cash)}</div></div>
-        <div class="metric"><div class="label">${t("expectedCard")}</div><div class="value">${money(summary.byMethod.card)}</div></div>
-        <div class="metric"><div class="label">${t("expectedBank")}</div><div class="value">${money(summary.byMethod.bank)}</div></div>
-        <div class="metric"><div class="label">${t("netForDay", { inv: summary.invoiceCount, ret: summary.entries.length })}</div><div class="value">${money(summary.total)}</div></div>
+        <div class="metric"><div class="label">${closed ? t("totalCash") : t("expectedCash")}</div><div class="value">${money(totals.byMethod.cash)}</div></div>
+        <div class="metric"><div class="label">${closed ? t("totalCard") : t("expectedCard")}</div><div class="value">${money(totals.byMethod.card)}</div></div>
+        <div class="metric"><div class="label">${closed ? t("totalBank") : t("expectedBank")}</div><div class="value">${money(totals.byMethod.bank)}</div></div>
+        <div class="metric"><div class="label">${t(closed ? "totalForDay" : "netForDay", { inv: countLabel(totals.invoiceCount, "invoiceOne", "invoiceMany"), ret: countLabel(totals.entryCount, "retailOne", "retailMany") })}</div><div class="value">${money(totals.total)}</div></div>
       </div>
       ${editing ? `
         <div class="field-wrap"><label class="field">${t("countedCashLabel")}</label><input type="number" step="0.01" value="${esc(cashForm.countedCash)}" oninput="updateCashField('countedCash', this.value)"></div>
         <div class="field-wrap"><label class="field">${t("noteOptional")}</label><input value="${esc(cashForm.note)}" oninput="updateCashField('note', this.value)" placeholder="${t("diffReasonPlaceholder")}"></div>
         ${liveDiff !== null ? `<p>${t("diffVsExpected")}${diffLabel(liveDiff)}</p>` : ""}
         <div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveCashClosing()">${t("saveClosing")}</button><button onclick="cancelCashEdit()">${t("cancel")}</button></div>
+      ` : closed ? `
+        ${closing.autoClosed
+          ? `<p class="muted">${t("notCounted")}</p>`
+          : `<p>${t("countedInCash")}<b>${money(closing.countedCash)}</b> — ${t("difference")}${diffLabel(closing.countedCash - totals.byMethod.cash)}</p>`}
+        ${closing.note ? `<p class="muted">${esc(closing.note)}</p>` : ""}
+        <button ${offline ? "disabled" : ""} onclick="reopenDay()">${t("reopenDay")}</button>
+      ` : future ? `
+        <p class="muted">${t("futureDayNotice")}</p>
       ` : `
-        ${existing ? `
-          <p>${t("countedInCash")}<b>${money(existing.countedCash)}</b> — ${t("difference")}${diffLabel(existing.countedCash - summary.byMethod.cash)}</p>
-          ${existing.note ? `<p class="muted">${esc(existing.note)}</p>` : ""}
-        ` : `<p class="muted">${t("dayNotClosed")}</p>`}
-        <button class="primary" ${offline ? "disabled" : ""} onclick="beginCashEdit()">${existing ? t("editClosing") : t("closeDay")}</button>
+        <p class="muted">${t("dayNotClosed")}</p>
+        <button class="primary" ${offline ? "disabled" : ""} onclick="beginCashEdit()">${t("closeDay")}</button>
       `}
     </div>
     <div class="card">
       <div class="row" style="margin-bottom: ${summary.entries.length || cashEntryForm ? "0.8rem" : "0"};">
         <h3 style="margin:0;">${t("retailTitle")}</h3>
-        ${!cashEntryForm ? `<button class="primary" ${offline ? "disabled" : ""} onclick="beginCashEntry()">${t("addEntry")}</button>` : ""}
+        ${!cashEntryForm && !closed ? `<button class="primary" ${offline ? "disabled" : ""} onclick="beginCashEntry()">${t("addEntry")}</button>` : ""}
       </div>
       ${summary.entries.length === 0 && !cashEntryForm ? `<p class="muted">${t("noRetailEntries")}</p>` : ""}
       ${summary.entries.length ? `
@@ -2146,13 +2263,14 @@ function renderCash() {
                 <td data-label="${t("amount")}">${money(e.amount)}</td>
                 <td class="muted" data-label="${t("paymentMethod")}">${paymentLabel(e.paymentMethod)}</td>
                 <td class="muted" data-label="${t("note")}">${esc(e.note || "—")}</td>
-                <td class="actions-cell"><button class="danger" ${offline ? "disabled" : ""} onclick="deleteCashEntry('${e.id}')">${t("del")}</button></td>
+                <td class="actions-cell">${closed ? "" : `<button class="danger" ${offline ? "disabled" : ""} onclick="deleteCashEntry('${e.id}')">${t("del")}</button>`}</td>
               </tr>
             `).join("")}
           </tbody>
         </table>
         </div>
       ` : ""}
+      ${closed ? `<p class="muted">${t("closedDayLocked")}</p>` : ""}
       ${cashEntryForm ? `
         <div class="grid" style="grid-template-columns: 1fr 1fr 2fr; margin-top: 10px;">
           <div class="field-wrap"><label class="field">${t("amountEur")}</label><input type="number" step="0.01" value="${esc(cashEntryForm.amount)}" oninput="updateCashEntryField('amount', this.value)"></div>
@@ -2166,14 +2284,20 @@ function renderCash() {
         <div class="savebar"><button class="primary" ${offline ? "disabled" : ""} onclick="saveCashEntry()">${t("saveEntry")}</button><button onclick="cancelCashEntry()">${t("cancel")}</button></div>
       ` : ""}
     </div>
-    <h3>${t("history")}</h3>
+    <h3>${t("historyLast")}</h3>
     <div class="table-scroll">
     <table class="data mobile-cards">
-      <thead><tr><th>${t("date")}</th><th>${t("expectedCashCol")}</th><th>${t("countedCol")}</th><th>${t("diffCol")}</th></tr></thead>
+      <thead><tr><th>${t("date")}</th><th>${t("totalCol")}</th><th>${t("totalCash")}</th><th>${t("countedCol")}</th><th>${t("diffCol")}</th></tr></thead>
       <tbody>
-        ${history.length === 0 ? `<tr><td colspan="4" class="muted">${t("noClosedDays")}</td></tr>` : history.map(c => {
-          const s = computeCashSummary(c.date);
-          return `<tr><td data-label="${t("date")}">${c.date}</td><td data-label="${t("expectedCashCol")}">${money(s.byMethod.cash)}</td><td data-label="${t("countedCol")}">${money(c.countedCash)}</td><td data-label="${t("diffCol")}">${diffLabel(c.countedCash - s.byMethod.cash)}</td></tr>`;
+        ${history.length === 0 ? `<tr><td colspan="5" class="muted">${t("noClosedDays")}</td></tr>` : history.map(c => {
+          const dt = dayTotals(c.date, c);
+          return `<tr>
+            <td data-label="${t("date")}">${c.date}</td>
+            <td data-label="${t("totalCol")}">${money(dt.total)}</td>
+            <td data-label="${t("totalCash")}">${money(dt.byMethod.cash)}</td>
+            <td class="${c.autoClosed ? "muted" : ""}" data-label="${t("countedCol")}">${c.autoClosed ? "—" : money(c.countedCash)}</td>
+            <td data-label="${t("diffCol")}">${c.autoClosed ? `<span class="muted">—</span>` : diffLabel(c.countedCash - dt.byMethod.cash)}</td>
+          </tr>`;
         }).join("")}
       </tbody>
     </table>
