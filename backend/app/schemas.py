@@ -1,6 +1,6 @@
 import uuid
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class SignupRequest(BaseModel):
@@ -21,6 +21,30 @@ class Token(BaseModel):
 class UserOut(BaseModel):
     id: uuid.UUID
     email: EmailStr
+
+    model_config = {"from_attributes": True}
+
+
+class ProductIn(BaseModel):
+    name: str = Field(min_length=1)
+    category: str = ""
+    unit: str = ""
+    price: float = 0
+    stock: float | None = None
+
+
+class RenameCategoryRequest(BaseModel):
+    old_name: str
+    new_name: str
+
+
+class ProductOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    category: str
+    unit: str
+    price: float
+    stock: float | None
 
     model_config = {"from_attributes": True}
 

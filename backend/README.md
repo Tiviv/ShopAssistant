@@ -5,10 +5,18 @@ Part of the `feature/python_backend` branch — see
 `../docs/python-backend-progress.md` for what's done so far. `main`
 doesn't have this directory; it stays on Supabase.
 
-Currently implemented: **Phase 1 — skeleton + auth.** Signup, login, JWT,
-and the `settings` row auto-created on signup (mirrors the Supabase
-`handle_new_user` trigger). Products/customers/documents/cash-register
-endpoints come in later phases.
+Currently implemented:
+- **Phase 1 — skeleton + auth.** Signup, login, JWT, and the `settings` row
+  auto-created on signup (mirrors the Supabase `handle_new_user` trigger).
+- **Phase 2 — products.** List/create/update/delete, all scoped to the
+  authenticated owner, plus a `rename-category` bulk endpoint (mirrors the
+  frontend's category rename, which moves every product filed under the
+  old name). In `index.html`, connect via the new "Python backend
+  (experimental)" card on the Settings tab — it's a separate, optional
+  connection from the Supabase one; while connected, product writes go
+  here instead of Supabase, nothing else changes.
+
+Customers/documents/cash-register endpoints come in later phases.
 
 ## One-time setup
 
@@ -40,6 +48,10 @@ Try it:
 ```
 curl -X POST localhost:8000/auth/signup -H "Content-Type: application/json" \
   -d '{"email":"you@example.com","password":"something-long"}'
+# -> {"access_token": "...", "token_type": "bearer"}
+
+curl localhost:8000/products -H "Authorization: Bearer <token from above>"
+# -> []
 ```
 
 ## Tests

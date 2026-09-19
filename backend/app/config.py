@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-to-a-long-random-string"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
-    cors_origins: str = "http://localhost:8000"
+    # Safe as a wildcard here — see the comment on CORSMiddleware in main.py.
+    cors_origins: str = "*"
 
     @property
     def cors_origin_list(self) -> list[str]:

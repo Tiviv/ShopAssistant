@@ -263,6 +263,12 @@ const UNITS = ["кг", "бр", "оп", "л", "г"];
 const CATEGORIES = ["Плодове", "Зеленчуци", "Напитки", "Подправки", "Ориз и зърнени", "Сладки", "Други"];
 const VAT_RATES = [20, 9, 0];
 const CONFIG_KEY = "shopERP_supabase_config";
+// Separate connection to the experimental Python backend (see
+// docs/python-backend-plan.md) — independent of the Supabase config above,
+// since for now the two coexist: Supabase still gates login for everything,
+// this is an optional second connection that, once set, redirects just the
+// resources migrated so far (products, for now) to the Python API instead.
+const PY_CONFIG_KEY = "shopERP_py_backend_config";
 const CACHE_KEY = "shopERP_offline_cache_v1";
 const LANG_KEY = "shopERP_lang";
 
@@ -353,6 +359,18 @@ const TRANSLATIONS = {
     deleteCategoryConfirm: "Изтриване на категорията „{name}“?",
     categoryInUse: "„{name}“ се използва от {n}. Преместете ги в друга категория, преди да я изтриете.",
     usedByProducts: "{n} продукта", usedByProduct: "1 продукт", categoryNotUsed: "не се използва",
+    pyBackendTitle: "Python бекенд (експериментално)",
+    pyBackendHint: "Отделна, незадължителна връзка към Python бекенда от docs/python-backend-plan.md. Докато е свързана, продуктите (добавяне/редакция/изтриване) се пазят там вместо в Supabase — останалите данни не се засягат. Внимание: докато е свързан, продуктите не участват в JSON резервно копие/възстановяване или в живата синхронизация между устройства — това идва в по-късна фаза.",
+    pyBackendConnect: "Свържи Python бекенд",
+    pyBackendConnectedTo: "Свързан към {url} — продуктите се пазят там.",
+    pyBackendDisconnect: "Прекъсни връзката (продуктите се връщат в Supabase)",
+    pyBackendDisconnectConfirm: "Продуктите отново ще се пазят в Supabase. Продуктите, добавени в Python бекенда, остават там — не се трият.",
+    pyBackendUrlPrompt: "Адрес на Python бекенда:",
+    pyBackendEmailPrompt: "Имейл за Python бекенда:",
+    pyBackendPasswordPrompt: "Парола:",
+    pyBackendLoginFailedOfferSignup: "Входът не бе успешен ({error}). Да се опита ли регистрация на нов акаунт с тези данни?",
+    pyBackendConnectFailed: "Свързването не бе успешно: {error}",
+    pyBackendConnected: "Свързано успешно.",
     lineModeQty: "× цена", lineModeAmount: "обща сума", lineMode: "Начин на изчисление",
     amountPlaceholder: "сума",
     addRow: "+ Добави ред", taxBase: "Данъчна основа", vatLabel: "ДДС", removeTitle: "Премахни",
@@ -546,6 +564,18 @@ const TRANSLATIONS = {
     deleteCategoryConfirm: "Delete the category \u201c{name}\u201d?",
     categoryInUse: "\u201c{name}\u201d is used by {n}. Move them to another category before deleting it.",
     usedByProducts: "{n} products", usedByProduct: "1 product", categoryNotUsed: "not used",
+    pyBackendTitle: "Python backend (experimental)",
+    pyBackendHint: "A separate, optional connection to the Python backend from docs/python-backend-plan.md. While connected, product writes (add/edit/delete) go there instead of Supabase — nothing else is affected. Note: while connected, products are left out of the JSON backup/restore and out of live multi-device sync — those come in a later phase.",
+    pyBackendConnect: "Connect Python backend",
+    pyBackendConnectedTo: "Connected to {url} — products are stored there.",
+    pyBackendDisconnect: "Disconnect (products go back to Supabase)",
+    pyBackendDisconnectConfirm: "Products will be stored in Supabase again. Products already added to the Python backend stay there — nothing is deleted.",
+    pyBackendUrlPrompt: "Python backend URL:",
+    pyBackendEmailPrompt: "Email for the Python backend:",
+    pyBackendPasswordPrompt: "Password:",
+    pyBackendLoginFailedOfferSignup: "Login failed ({error}). Try signing up a new account with these details instead?",
+    pyBackendConnectFailed: "Couldn't connect: {error}",
+    pyBackendConnected: "Connected successfully.",
     lineModeQty: "× price", lineModeAmount: "flat amount", lineMode: "How this line is priced",
     amountPlaceholder: "amount",
     addRow: "+ Add row", taxBase: "Net amount", vatLabel: "VAT", removeTitle: "Remove",
@@ -808,6 +838,7 @@ function cashEntryRowToObj(row) {
 
 // ---------- global app state ----------
 let cfg = loadConfig();
+let pyBackend = loadPyConfig(); // { url, token } | null — see PY_CONFIG_KEY above
 let supabaseClient = null;
 let session = null;
 let authScreen = "login"; // "login" | "signup" | "reset"
@@ -830,6 +861,36 @@ let realtimeChannel = null;
 // changes these function *bodies* one resource at a time; callers below
 // don't need to change again when that happens.
 // =========================================================================
+
+// Low-level fetch to the Python backend, shaped to match what the rest of
+// the app already expects from a Supabase call: { data, error }. Used both
+// by db.pyFetch (authenticated, against the connected pyBackend) and by the
+// connect flow below (unauthenticated, against a candidate URL being
+// tried for the first time).
+async function pyRequest(baseUrl, token, method, path, body) {
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(baseUrl.replace(/\/$/, "") + path, {
+      method, headers, body: body === undefined ? undefined : JSON.stringify(body)
+    });
+    if (res.status === 204) return { data: null, error: null };
+    let payload = null;
+    try { payload = await res.json(); } catch (e) { /* empty body, e.g. some error responses */ }
+    if (!res.ok) {
+      const detail = payload && payload.detail;
+      // FastAPI's own validation errors (422) come back as a list of
+      // {loc, msg, type} objects rather than a plain string.
+      const message = Array.isArray(detail) ? detail.map(d => d.msg).join("; ") : (detail || `HTTP ${res.status}`);
+      return { data: null, error: { message } };
+    }
+    return { data: payload, error: null };
+  } catch (e) {
+    return { data: null, error: { message: e.message } };
+  }
+}
+function usingPyBackendFor(table) { return table === "products" && !!(pyBackend && pyBackend.token); }
+
 const db = {
   auth: {
     getSession: () => supabaseClient.auth.getSession(),
@@ -845,9 +906,16 @@ const db = {
   nextDocumentNumber: (docType) => supabaseClient.rpc("next_document_number", { p_doc_type: docType }),
   adjustStock: (productId, qty) => supabaseClient.rpc("adjust_stock", { p_product_id: productId, p_qty: qty }),
 
+  // ---- Python backend (experimental, see docs/python-backend-plan.md) ----
+  pyFetch: (method, path, body) => pyRequest(pyBackend.url, pyBackend.token, method, path, body),
+  pySignup: (url, email, password) => pyRequest(url, null, "POST", "/auth/signup", { email, password }),
+  pyLogin: (url, email, password) => pyRequest(url, null, "POST", "/auth/login", { email, password }),
+
   // ---- per-table reads ----
   getSettings: (ownerId) => supabaseClient.from("settings").select("*").eq("owner_id", ownerId).maybeSingle(),
-  listProducts: (ownerId) => supabaseClient.from("products").select("*").eq("owner_id", ownerId).order("name"),
+  listProducts: (ownerId) => usingPyBackendFor("products")
+    ? db.pyFetch("GET", "/products")
+    : supabaseClient.from("products").select("*").eq("owner_id", ownerId).order("name"),
   listCustomers: (ownerId) => supabaseClient.from("customers").select("*").eq("owner_id", ownerId).order("name"),
   listDocuments: (ownerId) => supabaseClient.from("documents").select("*").eq("owner_id", ownerId).order("created_at"),
   listCashClosings: (ownerId) => supabaseClient.from("cash_closings").select("*").eq("owner_id", ownerId).order("date"),
@@ -872,17 +940,28 @@ const db = {
   unsubscribeRealtime: (channel) => supabaseClient.removeChannel(channel),
 
   // ---- generic single-row CRUD (products, customers, documents, cash_entries) ----
-  insertRow: (table, row) => supabaseClient.from(table).insert(row).select().single(),
-  updateRow: (table, id, patch) => supabaseClient.from(table).update(patch).eq("id", id).select().single(),
-  deleteRow: (table, id) => supabaseClient.from(table).delete().eq("id", id),
+  // products is special-cased inside each of these: once a Python backend is
+  // connected, product writes go there instead of Supabase. Every other
+  // table is untouched — this is Phase 2 of the migration plan, one
+  // resource at a time.
+  insertRow: (table, row) => usingPyBackendFor(table)
+    ? db.pyFetch("POST", "/products", row)
+    : supabaseClient.from(table).insert(row).select().single(),
+  updateRow: (table, id, patch) => usingPyBackendFor(table)
+    ? db.pyFetch("PUT", `/products/${id}`, patch)
+    : supabaseClient.from(table).update(patch).eq("id", id).select().single(),
+  deleteRow: (table, id) => usingPyBackendFor(table)
+    ? db.pyFetch("DELETE", `/products/${id}`)
+    : supabaseClient.from(table).delete().eq("id", id),
 
   // ---- settings ----
   updateSettings: (ownerId, patch) => supabaseClient.from("settings").update(patch).eq("owner_id", ownerId).select().single(),
   updateSettingsNoReturn: (ownerId, patch) => supabaseClient.from("settings").update(patch).eq("owner_id", ownerId),
 
   // ---- categories: renaming moves the products filed under the old name ----
-  renameProductsCategory: (ownerId, oldName, newName) => supabaseClient.from("products")
-    .update({ category: newName }).eq("owner_id", ownerId).eq("category", oldName),
+  renameProductsCategory: (ownerId, oldName, newName) => usingPyBackendFor("products")
+    ? db.pyFetch("POST", "/products/rename-category", { old_name: oldName, new_name: newName })
+    : supabaseClient.from("products").update({ category: newName }).eq("owner_id", ownerId).eq("category", oldName),
 
   // ---- documents: link a customer without needing the row back ----
   linkDocumentCustomer: (docId, customerId) => supabaseClient.from("documents").update({ customer_id: customerId }).eq("id", docId),
@@ -946,6 +1025,12 @@ function saveConfig(c) {
   localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...c, url: normalizeProjectUrl(c.url) }));
 }
 function clearConfig() { localStorage.removeItem(CONFIG_KEY); cfg = null; }
+
+function loadPyConfig() {
+  try { return JSON.parse(localStorage.getItem(PY_CONFIG_KEY)) || null; } catch (e) { return null; }
+}
+function savePyConfig(c) { localStorage.setItem(PY_CONFIG_KEY, JSON.stringify(c)); }
+function clearPyConfig() { localStorage.removeItem(PY_CONFIG_KEY); pyBackend = null; }
 
 function cacheState() {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(state)); } catch (e) {}
@@ -2728,7 +2813,54 @@ function renderSettings() {
     </div>
     <p class="muted">${t("accountantHint")}</p>
     ${renderCategoriesCard()}
+    ${renderPyBackendCard()}
   `;
+}
+
+// ---------- Python backend connection (experimental) ----------
+function renderPyBackendCard() {
+  const connected = !!(pyBackend && pyBackend.token);
+  return `
+    <div class="card">
+      <h3 style="margin-top:0;">${t("pyBackendTitle")}</h3>
+      <p class="muted" style="margin-top:0;">${t("pyBackendHint")}</p>
+      ${connected
+        ? `<p>${t("pyBackendConnectedTo", { url: esc(pyBackend.url) })}</p>
+           <button class="danger" onclick="disconnectPyBackend()">${t("pyBackendDisconnect")}</button>`
+        : `<button onclick="connectPyBackend()">${t("pyBackendConnect")}</button>`}
+    </div>
+  `;
+}
+async function connectPyBackend() {
+  const url = prompt(t("pyBackendUrlPrompt"), (pyBackend && pyBackend.url) || "http://localhost:8000");
+  if (url == null) return;
+  const trimmedUrl = url.trim().replace(/\/+$/, "");
+  if (!trimmedUrl) return;
+  const email = prompt(t("pyBackendEmailPrompt"));
+  if (email == null || !email.trim()) return;
+  const password = prompt(t("pyBackendPasswordPrompt"));
+  if (password == null || !password) return;
+
+  let res = await db.pyLogin(trimmedUrl, email.trim(), password);
+  if (res.error) {
+    // An unrecognized account is the common case on a first connect —
+    // offer to create one on the spot rather than sending them hunting for
+    // a separate signup screen.
+    if (!confirm(t("pyBackendLoginFailedOfferSignup", { error: res.error.message }))) return;
+    res = await db.pySignup(trimmedUrl, email.trim(), password);
+    if (res.error) { alert(t("pyBackendConnectFailed", { error: res.error.message })); return; }
+  }
+  pyBackend = { url: trimmedUrl, token: res.data.access_token };
+  savePyConfig(pyBackend);
+  alert(t("pyBackendConnected"));
+  await refetchTable("products");
+  render();
+}
+async function disconnectPyBackend() {
+  if (!confirm(t("pyBackendDisconnectConfirm"))) return;
+  clearPyConfig();
+  await refetchTable("products");
+  render();
 }
 
 // The one shared list, managed in one place. Built-in and added categories are

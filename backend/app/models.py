@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,3 +42,20 @@ class ShopSettings(Base):
     )
 
     owner: Mapped["User"] = relationship(back_populates="settings")
+
+
+# Mirrors supabase/schema.sql's `products` table. stock is nullable on
+# purpose (same as there): null means "not tracked", 0 means "out of stock".
+class Product(Base):
+    __tablename__ = "products"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    category: Mapped[str] = mapped_column(String, nullable=False, default="")
+    unit: Mapped[str] = mapped_column(String, nullable=False, default="")
+    price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    stock: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
