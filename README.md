@@ -82,6 +82,12 @@ file is downloaded, and a snapshot is kept inside the app. That snapshot puts a
 as it was just before the replace — so an import into the wrong account is one
 click to undo, without having to find the downloaded file.
 
+A closed day is restored with the takings that were saved when it was closed,
+not recomputed — recomputing would give a different answer for any day whose
+documents have been edited since, which is the whole reason those totals are
+snapshotted. Days closed before the app started saving them restore with no
+totals, exactly as they are now.
+
 Two things the import is careful about. Documents are re-linked to their
 customer rows by name and ЕИК, rather than keeping only a name. And the invoice,
 offer and credit-note counters only ever move *forward* — taking the highest of

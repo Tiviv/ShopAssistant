@@ -2445,7 +2445,16 @@ function documentKey(d) {
     d.relatedInvoiceNumber == null ? null : Number(d.relatedInvoiceNumber),
     (d.items || []).map(lineKey)]);
 }
-function closingKey(c) { return JSON.stringify([normStr(c.date), normNum(c.countedCash), normStr(c.note)]); }
+function closingKey(c) {
+  // The day's snapshotted sums are part of what makes a closing that closing:
+  // two days with the same counted cash but different takings are not the same
+  // record, so comparing on date and note alone would wrongly skip one.
+  const tot = c.totals;
+  return JSON.stringify([normStr(c.date), normNum(c.countedCash), normStr(c.note), !!c.autoClosed,
+    tot == null ? null : [normNum(tot.byMethod && tot.byMethod.cash), normNum(tot.byMethod && tot.byMethod.card),
+      normNum(tot.byMethod && tot.byMethod.bank), normNum(tot.total),
+      Number(tot.invoiceCount) || 0, Number(tot.entryCount) || 0]]);
+}
 function entryKey(c) {
   return JSON.stringify([normStr(c.date), normNum(c.amount), normStr(c.paymentMethod || "cash"), normStr(c.note)]);
 }
@@ -2612,9 +2621,22 @@ async function runImport(imported, mode, opts) {
       conflicting = before - closings.length;
     }
     if (closings.length) {
-      const { error } = await supabaseClient.from("cash_closings").insert(closings.map(c => ({
-        owner_id: uid, date: c.date, counted_cash: Number(c.countedCash) || 0, note: c.note || ""
-      })));
+      const { error } = await supabaseClient.from("cash_closings").insert(closings.map(c => {
+        // Carry the saved day totals through verbatim. They are a snapshot taken
+        // at closing time on purpose — recomputing them on restore would give a
+        // different answer for any day whose documents were edited since.
+        const tot = c.totals;
+        return {
+          owner_id: uid, date: c.date, counted_cash: Number(c.countedCash) || 0, note: c.note || "",
+          auto_closed: !!c.autoClosed,
+          total_cash: tot ? Number(tot.byMethod && tot.byMethod.cash) || 0 : null,
+          total_card: tot ? Number(tot.byMethod && tot.byMethod.card) || 0 : null,
+          total_bank: tot ? Number(tot.byMethod && tot.byMethod.bank) || 0 : null,
+          total: tot ? Number(tot.total) || 0 : null,
+          invoice_count: tot ? Number(tot.invoiceCount) || 0 : null,
+          entry_count: tot ? Number(tot.entryCount) || 0 : null
+        };
+      }));
       if (error) throw error;
     }
     const entries = take("cashEntries");
