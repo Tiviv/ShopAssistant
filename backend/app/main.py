@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, cash_closings, cash_entries, customers, documents, products
+from app.routers import auth, cash_closings, cash_entries, customers, documents, products, realtime
 
 app = FastAPI(title="ShopAssistant API")
 
@@ -26,6 +26,7 @@ app.include_router(customers.router)
 app.include_router(documents.router)
 app.include_router(cash_entries.router)
 app.include_router(cash_closings.router)
+app.include_router(realtime.router)
 
 
 @app.get("/health")

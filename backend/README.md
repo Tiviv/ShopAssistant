@@ -32,17 +32,25 @@ Currently implemented:
   job calls this here; the frontend calling it on every load (as the
   original schema's own fallback for a project without `pg_cron` already
   does) is the only mechanism, by design.
+- **Phase 6 — realtime.** A real WebSocket (`GET /ws?token=...`), not
+  polling — an in-process `ConnectionManager` (`app/realtime.py`) tracks
+  each owner's open sockets and every mutating endpoint broadcasts
+  `{"table": "..."}` to them after its commit. The token rides a query
+  param rather than the `Authorization` header, since a browser can't set
+  custom headers on a WebSocket handshake. In-process only: a
+  multi-instance deployment would need a shared layer (Redis pub/sub or
+  similar) instead — not built speculatively before it's ever needed.
 
 In `index.html`, connect via the "Python backend (experimental)" card on
 the Settings tab — it's a separate, optional connection from the Supabase
 one; while connected, product, customer, document, and cash-register
-writes go here instead of Supabase, nothing else changes. One thing worth
-knowing: once documents are backend-managed, Supabase's own
+writes go here instead of Supabase, and changes push live to every other
+open tab/device connected to the same account, nothing else changes. One
+thing worth knowing: once documents are backend-managed, Supabase's own
 invoice/offer/credit counters stop advancing, so the "next number" shown
 on the Settings tab goes stale until you disconnect — the UI says so.
 
-Every phase from the original plan is done except realtime (6) and
-backup/restore (7) — both explicitly deferred from the start.
+Every phase from the original plan is done except backup/restore (7).
 
 ## One-time setup
 

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Product, User
+from app.realtime import manager
 from app.schemas import AdjustStockRequest, ProductIn, ProductOut, RenameCategoryRequest
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -41,6 +42,7 @@ async def create_product(
     db.add(product)
     await db.commit()
     await db.refresh(product)
+    await manager.broadcast(current_user.id, "products")
     return product
 
 
@@ -59,6 +61,7 @@ async def rename_category(
         .values(category=body.new_name)
     )
     await db.commit()
+    await manager.broadcast(current_user.id, "products")
 
 
 @router.put("/{product_id}", response_model=ProductOut)
@@ -73,6 +76,7 @@ async def update_product(
         setattr(product, field, value)
     await db.commit()
     await db.refresh(product)
+    await manager.broadcast(current_user.id, "products")
     return product
 
 
@@ -85,6 +89,7 @@ async def delete_product(
     product = await _get_owned_product(product_id, current_user, db)
     await db.delete(product)
     await db.commit()
+    await manager.broadcast(current_user.id, "products")
 
 
 @router.post("/{product_id}/adjust-stock", status_code=status.HTTP_204_NO_CONTENT)
@@ -106,3 +111,4 @@ async def adjust_stock(
         .values(stock=Product.stock - body.qty)
     )
     await db.commit()
+    await manager.broadcast(current_user.id, "products")

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import CashEntry, User
+from app.realtime import manager
 from app.schemas import CashEntryIn, CashEntryOut
 
 router = APIRouter(prefix="/cash_entries", tags=["cash"])
@@ -30,6 +31,7 @@ async def create_cash_entry(
     db.add(entry)
     await db.commit()
     await db.refresh(entry)
+    await manager.broadcast(current_user.id, "cash_entries")
     return entry
 
 
@@ -47,3 +49,4 @@ async def delete_cash_entry(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Cash entry not found")
     await db.delete(entry)
     await db.commit()
+    await manager.broadcast(current_user.id, "cash_entries")

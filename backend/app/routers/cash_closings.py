@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import CashClosing, User
+from app.realtime import manager
 from app.schemas import CashClosingIn, CashClosingOut, CloseForgottenDaysResponse
 
 router = APIRouter(prefix="/cash_closings", tags=["cash"])
@@ -81,6 +82,12 @@ async def close_forgotten_days(
     )
     closed_dates = result.fetchall()
     await db.commit()
+    if closed_dates:
+        # This runs on every load (see the comment above), so only broadcast
+        # when something actually changed — otherwise every device would
+        # nudge every other device to refetch on every page open, for
+        # nothing.
+        await manager.broadcast(current_user.id, "cash_closings")
     return CloseForgottenDaysResponse(closed=len(closed_dates))
 
 
@@ -99,6 +106,7 @@ async def upsert_cash_closing(
         setattr(closing, field, value)
     await db.commit()
     await db.refresh(closing)
+    await manager.broadcast(current_user.id, "cash_closings")
     return closing
 
 
@@ -112,3 +120,4 @@ async def delete_cash_closing(
     if closing is not None:
         await db.delete(closing)
         await db.commit()
+        await manager.broadcast(current_user.id, "cash_closings")

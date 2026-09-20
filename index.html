@@ -360,7 +360,7 @@ const TRANSLATIONS = {
     categoryInUse: "„{name}“ се използва от {n}. Преместете ги в друга категория, преди да я изтриете.",
     usedByProducts: "{n} продукта", usedByProduct: "1 продукт", categoryNotUsed: "не се използва",
     pyBackendTitle: "Python бекенд (експериментално)",
-    pyBackendHint: "Отделна, незадължителна връзка към Python бекенда от docs/python-backend-plan.md. Докато е свързана, продуктите, клиентите, документите (фактури/оферти/кредитни известия — създаване, редакция, изтриване, номерация, движение на наличности) и касата (дневни обороти, ръчни продажби, затваряне на ден — включително автоматичното затваряне на забравени дни) се пазят там вместо в Supabase — останалите данни не се засягат. Внимание: докато е свързан, тези данни не участват в JSON резервно копие/възстановяване или в живата синхронизация между устройства (по-късна фаза), а бройката „следващ номер“ в Настройки спира да се обновява, защото номерата вече идват от Python бекенда.",
+    pyBackendHint: "Отделна, незадължителна връзка към Python бекенда от docs/python-backend-plan.md. Докато е свързана, продуктите, клиентите, документите (фактури/оферти/кредитни известия — създаване, редакция, изтриване, номерация, движение на наличности) и касата (дневни обороти, ръчни продажби, затваряне на ден — включително автоматичното затваряне на забравени дни) се пазят там вместо в Supabase — останалите данни не се засягат. Живата синхронизация между устройства работи и тук — през отделна WebSocket връзка към Python бекенда. Внимание: докато е свързан, тези данни не участват в JSON резервно копие/възстановяване (по-късна фаза), а бройката „следващ номер“ в Настройки спира да се обновява, защото номерата вече идват от Python бекенда.",
     pyBackendConnect: "Свържи Python бекенд",
     pyBackendConnectedTo: "Свързан към {url} — продуктите, клиентите, документите и касата се пазят там.",
     pyBackendDisconnect: "Прекъсни връзката (данните се връщат в Supabase)",
@@ -565,7 +565,7 @@ const TRANSLATIONS = {
     categoryInUse: "\u201c{name}\u201d is used by {n}. Move them to another category before deleting it.",
     usedByProducts: "{n} products", usedByProduct: "1 product", categoryNotUsed: "not used",
     pyBackendTitle: "Python backend (experimental)",
-    pyBackendHint: "A separate, optional connection to the Python backend from docs/python-backend-plan.md. While connected, products, customers, documents (invoices/offers/credit notes — create, edit, delete, numbering, stock movement), and the cash register (daily takings, walk-in sales, day closing — including auto-closing forgotten days) are stored there instead of Supabase — nothing else is affected. Note: while connected, that data is left out of the JSON backup/restore and out of live multi-device sync (a later phase), and the “next number” shown in Settings stops updating, since numbers now come from the Python backend instead.",
+    pyBackendHint: "A separate, optional connection to the Python backend from docs/python-backend-plan.md. While connected, products, customers, documents (invoices/offers/credit notes — create, edit, delete, numbering, stock movement), and the cash register (daily takings, walk-in sales, day closing — including auto-closing forgotten days) are stored there instead of Supabase — nothing else is affected. Live multi-device sync works here too, over a separate WebSocket connection to the Python backend. Note: while connected, that data is left out of the JSON backup/restore (a later phase), and the “next number” shown in Settings stops updating, since numbers now come from the Python backend instead.",
     pyBackendConnect: "Connect Python backend",
     pyBackendConnectedTo: "Connected to {url} — products, customers, documents, and the cash register are stored there.",
     pyBackendDisconnect: "Disconnect (data goes back to Supabase)",
@@ -851,6 +851,7 @@ let dataLoaded = false;
 let offline = false;
 let syncStatus = "idle"; // idle | syncing | online | offline | error
 let realtimeChannel = null;
+let pyRealtimeSocket = null; // WebSocket to the Python backend, when connected — see db.subscribePyRealtime
 
 // =========================================================================
 // DATA ACCESS LAYER (db)
@@ -888,6 +889,34 @@ async function pyRequest(baseUrl, token, method, path, body) {
   } catch (e) {
     return { data: null, error: { message: e.message } };
   }
+}
+// ws:// (or wss:// for an https backend) equivalent of the Python backend's
+// URL, with the auth token as a query param — a WebSocket handshake can't
+// carry a custom Authorization header the way a normal fetch can.
+function pyWsUrl(httpUrl, token) {
+  const wsBase = httpUrl.replace(/^https/, "wss").replace(/^http/, "ws").replace(/\/+$/, "");
+  return `${wsBase}/ws?token=${encodeURIComponent(token)}`;
+}
+// Opens the realtime socket and wires it to call onChange(table) for every
+// push from the server (see backend/app/realtime.py). Reconnects once,
+// after a short delay, on a connection loss that wasn't asked for —
+// unsubscribePyRealtime() clears onclose before an intentional close, so
+// that never triggers a reconnect.
+function openPyRealtimeSocket(onChange) {
+  const ws = new WebSocket(pyWsUrl(pyBackend.url, pyBackend.token));
+  ws.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.table) onChange(msg.table);
+    } catch (e) { /* ignore a malformed push rather than crash the socket */ }
+  };
+  ws.onclose = () => {
+    if (pyRealtimeSocket === ws && pyBackend && pyBackend.token && session) {
+      pyRealtimeSocket = null;
+      setTimeout(() => { if (pyBackend && pyBackend.token && session) pyRealtimeSocket = openPyRealtimeSocket(onChange); }, 2000);
+    }
+  };
+  return ws;
 }
 function usingPyBackendFor(table) {
   // Grows as more resources get a Python endpoint (see docs/python-backend-plan.md)
@@ -959,6 +988,8 @@ const db = {
     .on("postgres_changes", { event: "*", schema: "public", table: "cash_entries", filter: `owner_id=eq.${ownerId}` }, () => onChange("cash_entries"))
     .subscribe(),
   unsubscribeRealtime: (channel) => supabaseClient.removeChannel(channel),
+  subscribePyRealtime: (onChange) => openPyRealtimeSocket(onChange),
+  unsubscribePyRealtime: (ws) => { if (ws) { ws.onclose = null; ws.close(); } },
 
   // ---- generic single-row CRUD (products, customers, documents, cash_entries) ----
   // A table migrated to the Python backend (usingPyBackendFor) is routed to
@@ -1179,8 +1210,16 @@ function setupRealtime() {
   teardownRealtime();
   const uidUser = session.user.id;
   realtimeChannel = db.subscribeRealtime(uidUser, refetchTable);
+  // The Supabase channel above still covers "settings" either way (that
+  // resource never moved — see docs/python-backend-plan.md). This one
+  // covers everything that has: products, customers, documents, and the
+  // cash register, pushed from backend/app/realtime.py.
+  if (pyBackend && pyBackend.token) pyRealtimeSocket = db.subscribePyRealtime(refetchTable);
 }
-function teardownRealtime() { if (realtimeChannel) { db.unsubscribeRealtime(realtimeChannel); realtimeChannel = null; } }
+function teardownRealtime() {
+  if (realtimeChannel) { db.unsubscribeRealtime(realtimeChannel); realtimeChannel = null; }
+  if (pyRealtimeSocket) { db.unsubscribePyRealtime(pyRealtimeSocket); pyRealtimeSocket = null; }
+}
 
 async function refetchTable(table) {
   if (!session) return;
@@ -2888,12 +2927,14 @@ async function connectPyBackend() {
   savePyConfig(pyBackend);
   alert(t("pyBackendConnected"));
   await Promise.all([refetchTable("products"), refetchTable("customers"), refetchTable("documents"), refetchTable("cash_closings"), refetchTable("cash_entries")]);
+  setupRealtime();
   render();
 }
 async function disconnectPyBackend() {
   if (!confirm(t("pyBackendDisconnectConfirm"))) return;
   clearPyConfig();
   await Promise.all([refetchTable("products"), refetchTable("customers"), refetchTable("documents"), refetchTable("cash_closings"), refetchTable("cash_entries")]);
+  setupRealtime();
   render();
 }
 

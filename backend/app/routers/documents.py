@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Document, ShopSettings, User
+from app.realtime import manager
 from app.schemas import (
     DocumentCreate,
     DocumentOut,
@@ -85,6 +86,7 @@ async def create_document(
     db.add(document)
     await db.commit()
     await db.refresh(document)
+    await manager.broadcast(current_user.id, "documents")
     return document
 
 
@@ -100,6 +102,7 @@ async def update_document(
         setattr(document, field, value)
     await db.commit()
     await db.refresh(document)
+    await manager.broadcast(current_user.id, "documents")
     return document
 
 
@@ -114,6 +117,7 @@ async def set_document_paid(
     document.paid = body.paid
     await db.commit()
     await db.refresh(document)
+    await manager.broadcast(current_user.id, "documents")
     return document
 
 
@@ -130,6 +134,7 @@ async def link_document_customer(
     document = await _get_owned_document(document_id, current_user, db)
     document.customer_id = body.customer_id
     await db.commit()
+    await manager.broadcast(current_user.id, "documents")
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -141,3 +146,4 @@ async def delete_document(
     document = await _get_owned_document(document_id, current_user, db)
     await db.delete(document)
     await db.commit()
+    await manager.broadcast(current_user.id, "documents")
