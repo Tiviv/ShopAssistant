@@ -3,7 +3,9 @@
 Part of the `feature/python_backend` branch — see
 `../docs/python-backend-plan.md` for why this exists and
 `../docs/python-backend-progress.md` for what's done so far. `main`
-doesn't have this directory; it stays on Supabase.
+doesn't have this directory; it stays on Supabase. On this branch, this is
+the *only* backend — `index.html` here no longer talks to Supabase at all
+(no `supabase-js`, no project URL/anon key, no Supabase auth or realtime).
 
 Currently implemented:
 - **Phase 1 — skeleton + auth.** Signup, login, JWT, and the `settings` row
@@ -48,19 +50,25 @@ Currently implemented:
   instead of calling a bulk one. That trades away the atomicity Supabase's
   single bulk call gave: a network failure mid-import can leave a
   replace/restore partially applied here. The UI says so.
+- **Phase 8 — replace Supabase entirely.** Two things Supabase had provided
+  that nothing here replaced yet: `GET/POST/PATCH /settings`
+  (`app/routers/settings.py` — company info, the three document counters,
+  custom categories) and password reset (`POST /auth/forgot-password` +
+  `POST /auth/reset-password` in `app/routers/auth.py`) — single-use,
+  hashed, 30-minute-expiry tokens, emailed via `aiosmtplib`
+  (`app/email.py`) through whatever SMTP provider you configure. With both
+  in place, `index.html` on this branch dropped Supabase entirely: no
+  `supabase-js`, no project URL/anon key, no Supabase auth or realtime.
+  This backend is now the only one it talks to.
 
-In `index.html`, connect via the "Python backend (experimental)" card on
-the Settings tab — it's a separate, optional connection from the Supabase
-one; while connected, product, customer, document, and cash-register
-writes go here instead of Supabase, changes push live to every other open
-tab/device connected to the same account, and JSON backup/restore and the
-Excel report all work against this data too. One thing worth knowing: once
-documents are backend-managed, Supabase's own invoice/offer/credit
-counters stop advancing, so the "next number" shown on the Settings tab
-goes stale until you disconnect — the UI says so.
+In `index.html`, sign up or log in on the first screen after entering this
+backend's URL — there's no separate Supabase connection anymore. Product,
+customer, document, and cash-register writes, live sync across every open
+tab/device on the same account, JSON backup/restore, and the Excel report
+all go through this backend.
 
-Every phase from the original plan (`docs/python-backend-plan.md`) is
-done.
+Every phase from the original plan (`docs/python-backend-plan.md`), plus
+the Phase 8 addition, is done.
 
 ## One-time setup
 
@@ -76,7 +84,14 @@ done.
    ```
 3. **Config**: `cp .env.example .env` and adjust `DATABASE_URL` to match
    whichever Postgres you're using (the docker-compose one already matches
-   the example).
+   the example). Also set `JWT_SECRET` to something real, and `FRONTEND_URL`
+   to wherever `index.html` is actually served from (the emailed reset
+   link points there). SMTP (`SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD`/...) is
+   optional for local dev — leave `SMTP_HOST` empty and forgot-password logs
+   the reset link to the server console instead of emailing it. For
+   anything staff will actually use, fill in a real SMTP provider (Gmail
+   app password, Mailtrap, a transactional service's relay, self-hosted
+   Postfix — any of them work, see the comments in `.env.example`).
 4. **Migrate**: `alembic upgrade head`
 
 ## Running

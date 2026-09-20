@@ -20,6 +20,15 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6)
+
+
 class UserOut(BaseModel):
     id: uuid.UUID
     email: EmailStr
@@ -207,5 +216,26 @@ class SettingsOut(BaseModel):
     next_offer_no: int
     next_credit_no: int
     categories: list
+
+    model_config = {"from_attributes": True}
+
+
+# Every field optional: mirrors Supabase's .update(patch), which only ever
+# touched the columns actually named in the patch. The frontend sends very
+# different partial shapes here — the full company-info form, a
+# categories-only patch, a counters-only patch during import restore — and
+# this one endpoint has to accept all of them without overwriting whatever
+# wasn't included.
+class SettingsUpdate(BaseModel):
+    company_name: str | None = None
+    eik: str | None = None
+    vat_number: str | None = None
+    address: str | None = None
+    mol: str | None = None
+    iban: str | None = None
+    categories: list | None = None
+    next_invoice_no: int | None = None
+    next_offer_no: int | None = None
+    next_credit_no: int | None = None
 
     model_config = {"from_attributes": True}

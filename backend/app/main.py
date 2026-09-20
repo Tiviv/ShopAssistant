@@ -2,7 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+# Aliased: this module is named settings_router, not settings, so it doesn't
+# shadow the app.config settings object imported above.
 from app.routers import auth, cash_closings, cash_entries, customers, documents, products, realtime
+from app.routers import settings as settings_router
 
 app = FastAPI(title="ShopAssistant API")
 
@@ -27,6 +30,7 @@ app.include_router(documents.router)
 app.include_router(cash_entries.router)
 app.include_router(cash_closings.router)
 app.include_router(realtime.router)
+app.include_router(settings_router.router)
 
 
 @app.get("/health")

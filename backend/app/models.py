@@ -153,3 +153,24 @@ class CashClosing(Base):
     invoice_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     entry_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     auto_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+# A forgot-password link's token, hashed before storage (so a DB dump alone
+# can't be used to reset anyone's password — the raw token only ever exists
+# in the emailed link and in memory here just long enough to hash it) and
+# single-use (used_at set on redemption, checked before honoring a token
+# again). No table for access tokens themselves since those are plain JWTs,
+# stateless by design — this one needs server-side state specifically so it
+# can be invalidated after one use and enumerated/expired independent of
+# its own claimed expiry.
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

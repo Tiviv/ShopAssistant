@@ -13,6 +13,17 @@ at a time, and `main` is never touched by this work.
 See `docs/python-backend-progress.md` for the live status/checklist — this
 file is the plan itself and shouldn't need to change often.
 
+**Update, Phase 8:** the plan below describes the original design — Python
+backend as an optional, independently-toggled connection running *alongside*
+Supabase, resource by resource. That held through Phase 7. Once every
+resource had a working Python endpoint, the plan changed: Supabase (auth
+included) is now fully removed from `index.html` on this branch, and the
+Python backend — with its own signup/login and SMTP-based password reset —
+is the only way this branch's `index.html` runs. `main` is still untouched
+and still Supabase-only. See the "How the two versions coexist" section
+below for what that means in practice now, and `docs/python-backend-progress.md`'s
+Phase 8 entry for the details.
+
 ## Current state (as of this branch's creation)
 
 `index.html` is a single-file vanilla JS SPA, no build step. It talks
@@ -90,12 +101,17 @@ toggle, so Supabase stays the default until a phase is verified working.
 
 - `main` — Supabase, untouched by this work.
 - `feature/python_backend` — adds a `backend/` directory alongside the
-  existing `index.html`/`supabase/`. Nothing existing is deleted, so
-  `git merge main` into this branch stays conflict-free for unrelated
-  fixes.
-- The frontend's `db.*` seam picks its backend per resource, so Supabase
-  and the FastAPI backend can be compared side by side while both exist,
-  for as long as that's useful.
+  existing `index.html`/`supabase/`. The `supabase/` directory and
+  `legacy-offline/` are left in place (unused, for reference/history), but
+  `index.html` on this branch no longer references Supabase at all: no
+  `supabase-js` script tag, no project URL/anon key setup, no Supabase
+  auth or realtime. The `db.*` seam still exists, but every function now
+  unconditionally calls the Python backend — there's nothing left to
+  toggle.
+- Merging `main` into this branch for unrelated fixes (e.g. a wording or
+  validation fix in a shared function) stays workable, but any Supabase-
+  specific hunk `main` touches will conflict or no-op here, since that code
+  no longer exists on this branch.
 
 ## Open decisions (revisit if they start to matter)
 

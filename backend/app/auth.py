@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -59,3 +61,17 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
     return user
+
+
+def generate_password_reset_token() -> tuple[str, str, datetime]:
+    # The raw token goes in the emailed link and is never stored — only its
+    # hash is, so a database dump alone can't be replayed as a working
+    # reset link. Returns (raw_token, token_hash, expires_at).
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.password_reset_token_expire_minutes)
+    return raw_token, token_hash, expires_at
+
+
+def hash_reset_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode()).hexdigest()

@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ShopAssistant / Магазинер</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
   :root {
     --bg: #faf9f6;
@@ -245,11 +244,13 @@
 
 <script>
 /* =========================================================================
-   ShopAssistant — Supabase-backed rewrite
-   Same UI/behavior as the original offline (localStorage-only) version,
-   but data lives in a Supabase project (free tier) instead of the browser:
-     - real login (email + password via Supabase Auth)
-     - multi-device sync (Realtime subscriptions)
+   ShopAssistant — Python backend rewrite (feature/python_backend)
+   Same UI/behavior as the original offline (localStorage-only) version and
+   the Supabase-backed version on main, but data lives in a self-hosted
+   Python (FastAPI) backend instead — see backend/ and
+   docs/python-backend-plan.md:
+     - real login (email + password, JWT), with password-reset emails
+     - multi-device sync (a WebSocket push from the backend)
      - server-side atomic invoice/offer/credit numbering (no more risk of
        two devices issuing the same invoice number)
      - stock is now decremented on invoice / restored on credit note
@@ -262,12 +263,8 @@
 const UNITS = ["кг", "бр", "оп", "л", "г"];
 const CATEGORIES = ["Плодове", "Зеленчуци", "Напитки", "Подправки", "Ориз и зърнени", "Сладки", "Други"];
 const VAT_RATES = [20, 9, 0];
-const CONFIG_KEY = "shopERP_supabase_config";
-// Separate connection to the experimental Python backend (see
-// docs/python-backend-plan.md) — independent of the Supabase config above,
-// since for now the two coexist: Supabase still gates login for everything,
-// this is an optional second connection that, once set, redirects just the
-// resources migrated so far (products, for now) to the Python API instead.
+// The Python backend connection (see docs/python-backend-plan.md) — the
+// app's only backend now. main stays on Supabase; this branch replaced it.
 const PY_CONFIG_KEY = "shopERP_py_backend_config";
 const CACHE_KEY = "shopERP_offline_cache_v1";
 const LANG_KEY = "shopERP_lang";
@@ -291,30 +288,23 @@ const TRANSLATIONS = {
     errVatShort: "Формат: BG + 9 или 10 цифри.", errPhone: "Телефонът трябва да съдържа 7–13 цифри.",
     errEmail: "Невалиден имейл адрес.", errIban: "Формат: BG + 20 цифри/букви (общо 22 знака).",
 
-    connectTitle: "Свързване с облак (Supabase)",
-    connectHelp: "Създайте безплатен проект на <b>supabase.com</b>, изпълнете <code>supabase/schema.sql</code> от хранилището в неговия SQL Editor, после копирайте <b>Project URL</b> и <b>anon public key</b> от Settings → API тук.",
-    projectUrl: "Project URL", anonKey: "Anon public key", connect: "Свързване", fillBoth: "Попълнете и двете полета.",
-    supabaseLoadFail: "Не успяхме да заредим Supabase библиотеката (проверете интернет връзката и презаредете страницата).",
+    connectTitle: "Свързване с бекенда",
+    connectHelp: "Стартирайте Python бекенда (виж <code>backend/README.md</code> в хранилището), после въведете адреса му тук — например <code>http://localhost:8000</code>.",
+    backendUrl: "Адрес на бекенда", connect: "Свързване", fillUrl: "Въведете адреса на бекенда.",
 
     password: "Парола", signIn: "Вход", createAccount: "Създаване на профил", pleaseWait: "Моля, изчакайте…",
     noAccount: "Нямате профил?", createNew: "Създайте нов", haveAccount: "Вече имате профил?",
     wrongCredentials: "Грешен имейл или парола.",
-    accountCreated: "Профилът е създаден. Ако имейл потвърждението е включено в Supabase, проверете пощата си, после влезте.",
     forgotPassword: "Забравена парола?", forgotTitle: "Забравена парола",
     forgotHelp: "Въведете имейла на профила си и ще ви изпратим линк за задаване на нова парола.",
-    sendLink: "Изпрати линк", backToLogin: "Назад към вход", changeConnection: "Смяна на Supabase връзка",
+    sendLink: "Изпрати линк", backToLogin: "Назад към вход", changeConnection: "Смяна на връзката с бекенда",
     resetSent: "Изпратихме линк за нова парола на {email}. Проверете пощата си, включително папка „Спам“.",
     invalidEmail: "Въведете валиден имейл адрес.",
     newPasswordTitle: "Нова парола", newPasswordHelp: "Задайте нова парола за профила си. Минимум 6 знака.",
     newPasswordLabel: "Нова парола", repeatPassword: "Повторете новата парола", savePassword: "Запази новата парола",
     passwordMin6: "Паролата трябва да е поне 6 знака.", passwordsDontMatch: "Двете пароли не съвпадат.",
     passwordChanged: "Паролата е сменена успешно.", passwordChangedNotice: "Паролата е сменена успешно. Влезте с новата парола.",
-    linkExpired: "Линкът вече не е валиден (изтекъл, вече използван, или отворен на друго устройство). Поискайте нов линк.",
-    linkInvalidTitle: "Линкът не е валиден",
-    linkInvalidBody: "Линкът за нова парола не е активен — най-често защото е изтекъл, вече е бил използван веднъж, или е отворен на устройство, различно от това, на което е поискан.",
-    linkInvalidHelp: "Поискайте нов линк и го отворете на същото устройство, на което го заявявате.",
-    requestNewLink: "Поискай нов линк",
-    forgetConnectionConfirm: "Забравяне на връзката с Supabase на този компютър?",
+    forgetConnectionConfirm: "Забравяне на връзката с бекенда на този компютър?",
     loadingData: "Зареждане на данни…", logout: "Изход",
 
     navDashboard: "Начало", navProducts: "Продукти", navCustomers: "Клиенти", navInvoices: "Фактури",
@@ -359,18 +349,6 @@ const TRANSLATIONS = {
     deleteCategoryConfirm: "Изтриване на категорията „{name}“?",
     categoryInUse: "„{name}“ се използва от {n}. Преместете ги в друга категория, преди да я изтриете.",
     usedByProducts: "{n} продукта", usedByProduct: "1 продукт", categoryNotUsed: "не се използва",
-    pyBackendTitle: "Python бекенд (експериментално)",
-    pyBackendHint: "Отделна, незадължителна връзка към Python бекенда от docs/python-backend-plan.md. Докато е свързана, продуктите, клиентите, документите (фактури/оферти/кредитни известия — създаване, редакция, изтриване, номерация, движение на наличности) и касата (дневни обороти, ръчни продажби, затваряне на ден — включително автоматичното затваряне на забравени дни) се пазят там вместо в Supabase — останалите данни не се засягат. Живата синхронизация между устройства работи и тук — през отделна WebSocket връзка към Python бекенда. JSON резервното копие и възстановяването също работят с тези данни (справката за Excel винаги е работела, тъй като се чете от вече заредените данни). Внимание: докато е свързан, бройката „следващ номер“ в Настройки спира да се обновява, защото номерата вече идват от Python бекенда; и за разлика от Supabase, възстановяване/замяна тук не е една неделима стъпка — прекъсване на връзката по средата може да остави частично приложена промяна.",
-    pyBackendConnect: "Свържи Python бекенд",
-    pyBackendConnectedTo: "Свързан към {url} — продуктите, клиентите, документите и касата се пазят там.",
-    pyBackendDisconnect: "Прекъсни връзката (данните се връщат в Supabase)",
-    pyBackendDisconnectConfirm: "Продуктите, клиентите, документите и касата отново ще се пазят в Supabase — и номерацията на фактури/оферти/кредитни известия ще продължи от Supabase броячите, не от тези на Python бекенда. Данните, добавени в Python бекенда, остават там — не се трият.",
-    pyBackendUrlPrompt: "Адрес на Python бекенда:",
-    pyBackendEmailPrompt: "Имейл за Python бекенда:",
-    pyBackendPasswordPrompt: "Парола:",
-    pyBackendLoginFailedOfferSignup: "Входът не бе успешен ({error}). Да се опита ли регистрация на нов акаунт с тези данни?",
-    pyBackendConnectFailed: "Свързването не бе успешно: {error}",
-    pyBackendConnected: "Свързано успешно.",
     lineModeQty: "× цена", lineModeAmount: "обща сума", lineMode: "Начин на изчисление",
     amountPlaceholder: "сума",
     addRow: "+ Добави ред", taxBase: "Данъчна основа", vatLabel: "ДДС", removeTitle: "Премахни",
@@ -429,7 +407,6 @@ const TRANSLATIONS = {
     closedDayLocked: "Денят е приключен. За да добавите или изтриете продажба, първо отключете деня.",
     futureDayNotice: "Бъдещ ден — може да се приключи най-рано в края на самия ден.",
     historyLast: "История (последните 10 приключени дни)", totalCol: "Общо за деня",
-    closingNeedsSchema: "Базата още няма полетата за записан оборот. Пуснете отново supabase/schema.sql в Supabase.",
 
     reportsTitle: "Справки", monthlyTurnover: "Оборот по месеци", topProducts: "Топ продукти по приход",
     noDataYet: "Няма данни още.",
@@ -441,7 +418,7 @@ const TRANSLATIONS = {
     accountantHint: "Съвет: обсъдете със счетоводителя дали са нужни допълнителни стъпки, преди да започнете да изпращате фактури на клиенти.",
 
     backupTitle: "Данни / Резервно копие",
-    cloudInfo: "Данните вече се пазят в облак (Supabase), синхронизирани на живо между всички устройства, на които влезете с този профил. Секцията по-долу е за допълнителна лична резервна копия и за пренасяне на данни от стария офлайн файл.",
+    cloudInfo: "Данните вече се пазят на сървъра и се синхронизират на живо между всички устройства, на които влезете с този профил. Секцията по-долу е за допълнителна лична резервна копия и за пренасяне на данни от стария офлайн файл.",
     downloadBackupTitle: "Изтегляне на резервно копие",
     downloadBackupHint: "Препоръчително веднъж месечно, като допълнителна застраховка извън облака.",
     downloadBackupBtn: "Изтегли резервно копие (JSON)",
@@ -496,30 +473,23 @@ const TRANSLATIONS = {
     errVatShort: "Format: BG + 9 or 10 digits.", errPhone: "Phone must contain 7–13 digits.",
     errEmail: "Invalid email address.", errIban: "Format: BG + 20 digits/letters (22 characters total).",
 
-    connectTitle: "Connect to the cloud (Supabase)",
-    connectHelp: "Create a free project at <b>supabase.com</b>, run <code>supabase/schema.sql</code> from the repository in its SQL Editor, then copy the <b>Project URL</b> and <b>anon public key</b> from Settings → API here.",
-    projectUrl: "Project URL", anonKey: "Anon public key", connect: "Connect", fillBoth: "Please fill in both fields.",
-    supabaseLoadFail: "Could not load the Supabase library (check your internet connection and reload the page).",
+    connectTitle: "Connect to the backend",
+    connectHelp: "Start the Python backend (see <code>backend/README.md</code> in the repository), then enter its address here — e.g. <code>http://localhost:8000</code>.",
+    backendUrl: "Backend URL", connect: "Connect", fillUrl: "Enter the backend's address.",
 
     password: "Password", signIn: "Sign in", createAccount: "Create account", pleaseWait: "Please wait…",
     noAccount: "No account yet?", createNew: "Create one", haveAccount: "Already have an account?",
     wrongCredentials: "Wrong email or password.",
-    accountCreated: "Account created. If email confirmation is enabled in Supabase, check your inbox, then sign in.",
     forgotPassword: "Forgot password?", forgotTitle: "Forgot password",
     forgotHelp: "Enter your account email and we'll send you a link to set a new password.",
-    sendLink: "Send link", backToLogin: "Back to sign in", changeConnection: "Change Supabase connection",
+    sendLink: "Send link", backToLogin: "Back to sign in", changeConnection: "Change backend connection",
     resetSent: "We sent a password reset link to {email}. Check your inbox, including the spam folder.",
     invalidEmail: "Enter a valid email address.",
     newPasswordTitle: "New password", newPasswordHelp: "Set a new password for your account. Minimum 6 characters.",
     newPasswordLabel: "New password", repeatPassword: "Repeat new password", savePassword: "Save new password",
     passwordMin6: "Password must be at least 6 characters.", passwordsDontMatch: "The two passwords don't match.",
     passwordChanged: "Password changed successfully.", passwordChangedNotice: "Password changed successfully. Sign in with the new password.",
-    linkExpired: "This link is no longer valid (expired, already used, or opened on a different device). Request a new one.",
-    linkInvalidTitle: "Link is not valid",
-    linkInvalidBody: "The password reset link isn't active — usually because it expired, was already used once, or was opened on a different device than the one that requested it.",
-    linkInvalidHelp: "Request a new link and open it on the same device you requested it from.",
-    requestNewLink: "Request a new link",
-    forgetConnectionConfirm: "Forget the Supabase connection on this device?",
+    forgetConnectionConfirm: "Forget the backend connection on this device?",
     loadingData: "Loading data…", logout: "Sign out",
 
     navDashboard: "Home", navProducts: "Products", navCustomers: "Customers", navInvoices: "Invoices",
@@ -564,18 +534,6 @@ const TRANSLATIONS = {
     deleteCategoryConfirm: "Delete the category \u201c{name}\u201d?",
     categoryInUse: "\u201c{name}\u201d is used by {n}. Move them to another category before deleting it.",
     usedByProducts: "{n} products", usedByProduct: "1 product", categoryNotUsed: "not used",
-    pyBackendTitle: "Python backend (experimental)",
-    pyBackendHint: "A separate, optional connection to the Python backend from docs/python-backend-plan.md. While connected, products, customers, documents (invoices/offers/credit notes — create, edit, delete, numbering, stock movement), and the cash register (daily takings, walk-in sales, day closing — including auto-closing forgotten days) are stored there instead of Supabase — nothing else is affected. Live multi-device sync works here too, over a separate WebSocket connection to the Python backend. JSON backup and restore work with this data too (the Excel report always has, since it reads from data already loaded). Note: while connected, the “next number” shown in Settings stops updating, since numbers now come from the Python backend instead; and unlike Supabase, restore/replace here isn't one indivisible step — a dropped connection partway through can leave it partially applied.",
-    pyBackendConnect: "Connect Python backend",
-    pyBackendConnectedTo: "Connected to {url} — products, customers, documents, and the cash register are stored there.",
-    pyBackendDisconnect: "Disconnect (data goes back to Supabase)",
-    pyBackendDisconnectConfirm: "Products, customers, documents, and the cash register will be stored in Supabase again — and invoice/offer/credit-note numbering will resume from Supabase's own counters, not the Python backend's. Data already added to the Python backend stays there — nothing is deleted.",
-    pyBackendUrlPrompt: "Python backend URL:",
-    pyBackendEmailPrompt: "Email for the Python backend:",
-    pyBackendPasswordPrompt: "Password:",
-    pyBackendLoginFailedOfferSignup: "Login failed ({error}). Try signing up a new account with these details instead?",
-    pyBackendConnectFailed: "Couldn't connect: {error}",
-    pyBackendConnected: "Connected successfully.",
     lineModeQty: "× price", lineModeAmount: "flat amount", lineMode: "How this line is priced",
     amountPlaceholder: "amount",
     addRow: "+ Add row", taxBase: "Net amount", vatLabel: "VAT", removeTitle: "Remove",
@@ -634,7 +592,6 @@ const TRANSLATIONS = {
     closedDayLocked: "This day is closed. Reopen it first to add or delete a sale.",
     futureDayNotice: "Future day — it can only be closed once the day itself is over.",
     historyLast: "History (last 10 closed days)", totalCol: "Day total",
-    closingNeedsSchema: "The database doesn't have the saved-turnover columns yet. Re-run supabase/schema.sql in Supabase.",
 
     reportsTitle: "Reports", monthlyTurnover: "Turnover by month", topProducts: "Top products by revenue",
     noDataYet: "No data yet.",
@@ -646,7 +603,7 @@ const TRANSLATIONS = {
     accountantHint: "Tip: check with your accountant whether any further steps are needed before you start sending invoices to customers.",
 
     backupTitle: "Data / Backup",
-    cloudInfo: "Your data is stored in the cloud (Supabase) and synced live across every device you sign in on. The section below is for an extra personal backup and for importing data from the old offline file.",
+    cloudInfo: "Your data is stored on the server and synced live across every device you sign in on. The section below is for an extra personal backup and for importing data from the old offline file.",
     downloadBackupTitle: "Download a backup",
     downloadBackupHint: "Worth doing monthly, as extra insurance outside the cloud.",
     downloadBackupBtn: "Download backup (JSON)",
@@ -837,37 +794,33 @@ function cashEntryRowToObj(row) {
 }
 
 // ---------- global app state ----------
-let cfg = loadConfig();
-let pyBackend = loadPyConfig(); // { url, token } | null — see PY_CONFIG_KEY above
-let supabaseClient = null;
-let session = null;
+let pyBackend = loadPyConfig(); // { url, token } | null — the one backend connection
+let session = null; // { user: { id, email } } | null, set from /auth/me after login
 let authScreen = "login"; // "login" | "signup" | "reset"
 let authError = "";
 let authNotice = "";
 let authBusy = false;
-let recoveryMode = false; // arrived via a password-recovery email link
+let resetMode = false; // arrived via a password-reset email link (?reset_token=...)
+let resetToken = null;
 let state = defaultState();
 let dataLoaded = false;
 let offline = false;
 let syncStatus = "idle"; // idle | syncing | online | offline | error
-let realtimeChannel = null;
-let pyRealtimeSocket = null; // WebSocket to the Python backend, when connected — see db.subscribePyRealtime
+let pyRealtimeSocket = null; // WebSocket to the Python backend — see db.subscribeRealtime
 
 // =========================================================================
 // DATA ACCESS LAYER (db)
-// Every call the app makes to Supabase (auth, table CRUD, RPCs, realtime),
-// named by what it does instead of inlined at ~40 call sites throughout the
-// UI code. Behavior here is unchanged from before this layer existed — it
-// is purely a seam. See docs/python-backend-plan.md: a future backend swap
-// changes these function *bodies* one resource at a time; callers below
-// don't need to change again when that happens.
+// Every call the app makes to the Python backend, named by what it does
+// instead of inlined at every call site throughout the UI code. This used
+// to be a seam between two backends (see docs/python-backend-progress.md
+// for that history) — as of the auth/settings migration, the Python
+// backend is the only one, so these are thin, unconditional wrappers.
 // =========================================================================
 
-// Low-level fetch to the Python backend, shaped to match what the rest of
-// the app already expects from a Supabase call: { data, error }. Used both
-// by db.pyFetch (authenticated, against the connected pyBackend) and by the
-// connect flow below (unauthenticated, against a candidate URL being
-// tried for the first time).
+// Low-level fetch, shaped as { data, error } so every caller can check
+// res.error without caring whether the network even worked. Used both by
+// db.pyFetch (authenticated, against the connected pyBackend) and directly
+// by login/signup/forgot-password (no token yet at that point).
 async function pyRequest(baseUrl, token, method, path, body) {
   try {
     const headers = { "Content-Type": "application/json" };
@@ -890,9 +843,9 @@ async function pyRequest(baseUrl, token, method, path, body) {
     return { data: null, error: { message: e.message } };
   }
 }
-// ws:// (or wss:// for an https backend) equivalent of the Python backend's
-// URL, with the auth token as a query param — a WebSocket handshake can't
-// carry a custom Authorization header the way a normal fetch can.
+// ws:// (or wss:// for an https backend) equivalent of the backend's URL,
+// with the auth token as a query param — a WebSocket handshake can't carry
+// a custom Authorization header the way a normal fetch can.
 function pyWsUrl(httpUrl, token) {
   const wsBase = httpUrl.replace(/^https/, "wss").replace(/^http/, "ws").replace(/\/+$/, "");
   return `${wsBase}/ws?token=${encodeURIComponent(token)}`;
@@ -900,9 +853,9 @@ function pyWsUrl(httpUrl, token) {
 // Opens the realtime socket and wires it to call onChange(table) for every
 // push from the server (see backend/app/realtime.py). Reconnects once,
 // after a short delay, on a connection loss that wasn't asked for —
-// unsubscribePyRealtime() clears onclose before an intentional close, so
+// unsubscribeRealtime() clears onclose before an intentional close, so
 // that never triggers a reconnect.
-function openPyRealtimeSocket(onChange) {
+function openRealtimeSocket(onChange) {
   const ws = new WebSocket(pyWsUrl(pyBackend.url, pyBackend.token));
   ws.onmessage = (evt) => {
     try {
@@ -913,27 +866,21 @@ function openPyRealtimeSocket(onChange) {
   ws.onclose = () => {
     if (pyRealtimeSocket === ws && pyBackend && pyBackend.token && session) {
       pyRealtimeSocket = null;
-      setTimeout(() => { if (pyBackend && pyBackend.token && session) pyRealtimeSocket = openPyRealtimeSocket(onChange); }, 2000);
+      setTimeout(() => { if (pyBackend && pyBackend.token && session) pyRealtimeSocket = openRealtimeSocket(onChange); }, 2000);
     }
   };
   return ws;
 }
-function usingPyBackendFor(table) {
-  // Grows as more resources get a Python endpoint (see docs/python-backend-plan.md)
-  // — one connection, whose scope widens with each phase.
-  return ["products", "customers", "documents", "cash_entries", "cash_closings"].includes(table) && !!(pyBackend && pyBackend.token);
-}
 
-// ---- bulk import/restore against the Python backend ----
-// There's no bulk endpoint for any table (see docs/python-backend-plan.md's
-// Phase 7 notes) — building one, wrapped in a single DB transaction, would
-// be the natural next step if this ever needs to be atomic. For now these
-// just loop over the same single-row endpoints every other db.* function
+// ---- bulk import/restore ----
+// No bulk endpoint on any table (see docs/python-backend-plan.md's Phase 7
+// notes) — a real one, wrapped in a single DB transaction, would be the
+// natural next step if this ever needs to be atomic. For now these just
+// loop over the same single-row endpoints every other db.* function
 // already uses, which means a mid-import network failure can leave a
-// replace/restore partially applied rather than failing as one unit the
-// way the Supabase bulk call did. That's an acceptable trade for a rare,
-// user-initiated operation on a shop-sized dataset, not something to build
-// speculative transaction machinery for.
+// replace/restore partially applied rather than failing as one unit. An
+// acceptable trade for a rare, user-initiated operation on a shop-sized
+// dataset, not something to build speculative transaction machinery for.
 async function pyBulkDelete(table) {
   const list = await db.pyFetch("GET", `/${table}`);
   if (list.error) return list;
@@ -956,124 +903,65 @@ async function pyBulkInsert(table, rows) {
 
 const db = {
   auth: {
-    getSession: () => supabaseClient.auth.getSession(),
-    onAuthStateChange: (cb) => supabaseClient.auth.onAuthStateChange(cb),
-    signInWithPassword: (creds) => supabaseClient.auth.signInWithPassword(creds),
-    signUp: (creds) => supabaseClient.auth.signUp(creds),
-    resetPasswordForEmail: (email, opts) => supabaseClient.auth.resetPasswordForEmail(email, opts),
-    updateUser: (patch) => supabaseClient.auth.updateUser(patch),
-    signOut: () => supabaseClient.auth.signOut()
+    login: (email, password) => pyRequest(pyBackend.url, null, "POST", "/auth/login", { email, password }),
+    signup: (email, password) => pyRequest(pyBackend.url, null, "POST", "/auth/signup", { email, password }),
+    me: () => db.pyFetch("GET", "/auth/me"),
+    forgotPassword: (email) => pyRequest(pyBackend.url, null, "POST", "/auth/forgot-password", { email }),
+    resetPassword: (token, newPassword) => pyRequest(pyBackend.url, null, "POST", "/auth/reset-password", { token, new_password: newPassword })
   },
-
-  closeMyFinishedDays: () => usingPyBackendFor("cash_closings")
-    ? db.pyFetch("POST", "/cash_closings/close-forgotten-days")
-    : supabaseClient.rpc("close_my_finished_days"),
-  // The Python endpoint returns {number: N}; unwrapped here so the result
-  // still looks like the Supabase RPC's { data: N, error } to every caller.
-  nextDocumentNumber: (docType) => usingPyBackendFor("documents")
-    ? db.pyFetch("POST", "/documents/next-number", { doc_type: docType })
-        .then(res => res.error ? res : { data: res.data.number, error: null })
-    : supabaseClient.rpc("next_document_number", { p_doc_type: docType }),
-  adjustStock: (productId, qty) => usingPyBackendFor("products")
-    ? db.pyFetch("POST", `/products/${productId}/adjust-stock`, { qty })
-    : supabaseClient.rpc("adjust_stock", { p_product_id: productId, p_qty: qty }),
-
-  // ---- Python backend (experimental, see docs/python-backend-plan.md) ----
   pyFetch: (method, path, body) => pyRequest(pyBackend.url, pyBackend.token, method, path, body),
-  pySignup: (url, email, password) => pyRequest(url, null, "POST", "/auth/signup", { email, password }),
-  pyLogin: (url, email, password) => pyRequest(url, null, "POST", "/auth/login", { email, password }),
+
+  closeMyFinishedDays: () => db.pyFetch("POST", "/cash_closings/close-forgotten-days"),
+  // The endpoint returns {number: N}; unwrapped here so every caller can
+  // just do `const { data: number, error } = await db.nextDocumentNumber(...)`.
+  nextDocumentNumber: (docType) => db.pyFetch("POST", "/documents/next-number", { doc_type: docType })
+    .then(res => res.error ? res : { data: res.data.number, error: null }),
+  adjustStock: (productId, qty) => db.pyFetch("POST", `/products/${productId}/adjust-stock`, { qty }),
 
   // ---- per-table reads ----
-  getSettings: (ownerId) => supabaseClient.from("settings").select("*").eq("owner_id", ownerId).maybeSingle(),
-  listProducts: (ownerId) => usingPyBackendFor("products")
-    ? db.pyFetch("GET", "/products")
-    : supabaseClient.from("products").select("*").eq("owner_id", ownerId).order("name"),
-  listCustomers: (ownerId) => usingPyBackendFor("customers")
-    ? db.pyFetch("GET", "/customers")
-    : supabaseClient.from("customers").select("*").eq("owner_id", ownerId).order("name"),
-  listDocuments: (ownerId) => usingPyBackendFor("documents")
-    ? db.pyFetch("GET", "/documents")
-    : supabaseClient.from("documents").select("*").eq("owner_id", ownerId).order("created_at"),
-  listCashClosings: (ownerId) => usingPyBackendFor("cash_closings")
-    ? db.pyFetch("GET", "/cash_closings")
-    : supabaseClient.from("cash_closings").select("*").eq("owner_id", ownerId).order("date"),
-  listCashEntries: (ownerId) => usingPyBackendFor("cash_entries")
-    ? db.pyFetch("GET", "/cash_entries")
-    : supabaseClient.from("cash_entries").select("*").eq("owner_id", ownerId).order("created_at"),
-  selectAll: (table, ownerId) => usingPyBackendFor(table)
-    ? db.pyFetch("GET", `/${table}`)
-    : supabaseClient.from(table).select("*").eq("owner_id", ownerId),
+  getSettings: () => db.pyFetch("GET", "/settings"),
+  listProducts: () => db.pyFetch("GET", "/products"),
+  listCustomers: () => db.pyFetch("GET", "/customers"),
+  listDocuments: () => db.pyFetch("GET", "/documents"),
+  listCashClosings: () => db.pyFetch("GET", "/cash_closings"),
+  listCashEntries: () => db.pyFetch("GET", "/cash_entries"),
+  selectAll: (table) => db.pyFetch("GET", `/${table}`),
 
-  loadAll: (ownerId) => Promise.all([
-    db.getSettings(ownerId), db.listProducts(ownerId), db.listCustomers(ownerId),
-    db.listDocuments(ownerId), db.listCashClosings(ownerId), db.listCashEntries(ownerId)
+  loadAll: () => Promise.all([
+    db.getSettings(), db.listProducts(), db.listCustomers(),
+    db.listDocuments(), db.listCashClosings(), db.listCashEntries()
   ]),
-  insertDefaultSettings: (ownerId) => supabaseClient.from("settings").insert({ owner_id: ownerId }).select().single(),
+  insertDefaultSettings: () => db.pyFetch("POST", "/settings"),
 
   // ---- realtime ----
-  subscribeRealtime: (ownerId, onChange) => supabaseClient.channel("shop-changes")
-    .on("postgres_changes", { event: "*", schema: "public", table: "products", filter: `owner_id=eq.${ownerId}` }, () => onChange("products"))
-    .on("postgres_changes", { event: "*", schema: "public", table: "customers", filter: `owner_id=eq.${ownerId}` }, () => onChange("customers"))
-    .on("postgres_changes", { event: "*", schema: "public", table: "documents", filter: `owner_id=eq.${ownerId}` }, () => onChange("documents"))
-    .on("postgres_changes", { event: "*", schema: "public", table: "settings", filter: `owner_id=eq.${ownerId}` }, () => onChange("settings"))
-    .on("postgres_changes", { event: "*", schema: "public", table: "cash_closings", filter: `owner_id=eq.${ownerId}` }, () => onChange("cash_closings"))
-    .on("postgres_changes", { event: "*", schema: "public", table: "cash_entries", filter: `owner_id=eq.${ownerId}` }, () => onChange("cash_entries"))
-    .subscribe(),
-  unsubscribeRealtime: (channel) => supabaseClient.removeChannel(channel),
-  subscribePyRealtime: (onChange) => openPyRealtimeSocket(onChange),
-  unsubscribePyRealtime: (ws) => { if (ws) { ws.onclose = null; ws.close(); } },
+  subscribeRealtime: (onChange) => openRealtimeSocket(onChange),
+  unsubscribeRealtime: (ws) => { if (ws) { ws.onclose = null; ws.close(); } },
 
   // ---- generic single-row CRUD (products, customers, documents, cash_entries) ----
-  // A table migrated to the Python backend (usingPyBackendFor) is routed to
-  // its endpoint there instead of Supabase — every other table is
-  // untouched. The Python API's routes are named to match the Supabase
-  // table names 1:1 (/products, /customers, ...), which is what lets this
-  // stay generic as more resources migrate instead of growing a branch per
-  // table.
-  insertRow: (table, row) => usingPyBackendFor(table)
-    ? db.pyFetch("POST", `/${table}`, row)
-    : supabaseClient.from(table).insert(row).select().single(),
-  updateRow: (table, id, patch) => usingPyBackendFor(table)
-    ? db.pyFetch("PUT", `/${table}/${id}`, patch)
-    : supabaseClient.from(table).update(patch).eq("id", id).select().single(),
-  deleteRow: (table, id) => usingPyBackendFor(table)
-    ? db.pyFetch("DELETE", `/${table}/${id}`)
-    : supabaseClient.from(table).delete().eq("id", id),
+  insertRow: (table, row) => db.pyFetch("POST", `/${table}`, row),
+  updateRow: (table, id, patch) => db.pyFetch("PUT", `/${table}/${id}`, patch),
+  deleteRow: (table, id) => db.pyFetch("DELETE", `/${table}/${id}`),
 
   // ---- settings ----
-  updateSettings: (ownerId, patch) => supabaseClient.from("settings").update(patch).eq("owner_id", ownerId).select().single(),
-  updateSettingsNoReturn: (ownerId, patch) => supabaseClient.from("settings").update(patch).eq("owner_id", ownerId),
+  updateSettings: (patch) => db.pyFetch("PATCH", "/settings", patch),
+  updateSettingsNoReturn: (patch) => db.pyFetch("PATCH", "/settings", patch),
 
   // ---- categories: renaming moves the products filed under the old name ----
-  renameProductsCategory: (ownerId, oldName, newName) => usingPyBackendFor("products")
-    ? db.pyFetch("POST", "/products/rename-category", { old_name: oldName, new_name: newName })
-    : supabaseClient.from("products").update({ category: newName }).eq("owner_id", ownerId).eq("category", oldName),
+  renameProductsCategory: (oldName, newName) => db.pyFetch("POST", "/products/rename-category", { old_name: oldName, new_name: newName }),
 
   // ---- documents: link a customer without needing the row back ----
-  linkDocumentCustomer: (docId, customerId) => usingPyBackendFor("documents")
-    ? db.pyFetch("PATCH", `/documents/${docId}/customer`, { customer_id: customerId })
-    : supabaseClient.from("documents").update({ customer_id: customerId }).eq("id", docId),
+  linkDocumentCustomer: (docId, customerId) => db.pyFetch("PATCH", `/documents/${docId}/customer`, { customer_id: customerId }),
   // ---- documents: toggling paid is a partial patch, not the full body a
-  // PUT/updateRow expects, so it gets its own endpoint on the Python side ----
-  setDocumentPaid: (id, paid) => usingPyBackendFor("documents")
-    ? db.pyFetch("PATCH", `/documents/${id}/paid`, { paid })
-    : supabaseClient.from("documents").update({ paid }).eq("id", id).select().single(),
+  // PUT/updateRow expects, so it gets its own endpoint ----
+  setDocumentPaid: (id, paid) => db.pyFetch("PATCH", `/documents/${id}/paid`, { paid }),
 
   // ---- cash register ----
-  upsertCashClosing: (row) => usingPyBackendFor("cash_closings")
-    ? db.pyFetch("PUT", `/cash_closings/${row.date}`, row)
-    : supabaseClient.from("cash_closings").upsert(row, { onConflict: "owner_id,date" }).select().single(),
-  deleteCashClosing: (ownerId, date) => usingPyBackendFor("cash_closings")
-    ? db.pyFetch("DELETE", `/cash_closings/${date}`)
-    : supabaseClient.from("cash_closings").delete().eq("owner_id", ownerId).eq("date", date),
+  upsertCashClosing: (row) => db.pyFetch("PUT", `/cash_closings/${row.date}`, row),
+  deleteCashClosing: (date) => db.pyFetch("DELETE", `/cash_closings/${date}`),
 
   // ---- bulk import/restore ----
-  deleteAllRows: (table, ownerId) => usingPyBackendFor(table)
-    ? pyBulkDelete(table)
-    : supabaseClient.from(table).delete().eq("owner_id", ownerId),
-  insertRows: (table, rows) => usingPyBackendFor(table)
-    ? pyBulkInsert(table, rows)
-    : supabaseClient.from(table).insert(rows)
+  deleteAllRows: (table) => pyBulkDelete(table),
+  insertRows: (table, rows) => pyBulkInsert(table, rows)
 };
 
 let sidebarOpen = false;
@@ -1098,35 +986,6 @@ let productSearch = "";
 let customerSearch = "";
 let docSearch = "";
 
-// The Supabase dashboard shows several URLs, and it's easy to copy the REST
-// endpoint (".../rest/v1/") instead of the bare Project URL. supabase-js
-// appends its own paths, so that yields ".../rest/v1/rest/v1/products" and
-// every request fails with "Invalid path specified in request URL" — while
-// login fails differently, since auth lives under /auth/v1. Rather than trust
-// the input, strip any API path back to the project origin.
-function normalizeProjectUrl(u) {
-  return String(u || "").trim()
-    .replace(/\/+$/, "")
-    .replace(/\/(rest|auth|storage|realtime|functions)\/v\d+$/i, "")
-    .replace(/\/+$/, "");
-}
-function loadConfig() {
-  try {
-    const c = JSON.parse(localStorage.getItem(CONFIG_KEY)) || null;
-    if (!c || !c.url) return c;
-    // Repair a connection that was saved wrong before this check existed:
-    // otherwise the browser stays broken, and re-opening a corrected share
-    // link can't help — that only applies when nothing is saved at all.
-    const fixed = normalizeProjectUrl(c.url);
-    if (fixed !== c.url) { c.url = fixed; localStorage.setItem(CONFIG_KEY, JSON.stringify(c)); }
-    return c;
-  } catch (e) { return null; }
-}
-function saveConfig(c) {
-  localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...c, url: normalizeProjectUrl(c.url) }));
-}
-function clearConfig() { localStorage.removeItem(CONFIG_KEY); cfg = null; }
-
 function loadPyConfig() {
   try { return JSON.parse(localStorage.getItem(PY_CONFIG_KEY)) || null; } catch (e) { return null; }
 }
@@ -1143,54 +1002,38 @@ function loadCachedState() {
 // =========================================================================
 // Bootstrapping
 // =========================================================================
-// A share link (?url=...&key=...) lets someone open the app and land
-// straight on login, instead of having to paste the Supabase connection
-// details in by hand. Only applied when this browser has no saved config
-// yet, so it never silently overrides an existing setup. The key here is
-// the public "anon"/"publishable" key, which is safe to pass around openly
-// (Row Level Security is the actual access control) — never the service_role key.
-function applySharedConfigFromUrl() {
+// A password-reset link points back here with ?reset_token=... (see
+// backend/app/email.py). Read and stripped from the URL before anything
+// else can act on it.
+function checkForResetToken() {
   const params = new URLSearchParams(location.search);
-  const sharedUrl = params.get("url");
-  const sharedKey = params.get("key");
-  if (sharedUrl && sharedKey && !cfg) {
-    saveConfig({ url: sharedUrl.trim(), anonKey: sharedKey.trim() });
-    cfg = loadConfig();
-  }
-  if (params.has("url") || params.has("key")) {
+  const token = params.get("reset_token");
+  if (token) {
+    resetMode = true;
+    resetToken = token;
     history.replaceState({}, "", location.pathname);
   }
 }
 
-// Must be read before createClient(), which consumes the auth fragment and
-// rewrites the URL, erasing the "type=recovery" marker we need to see.
-function isRecoveryUrl() {
-  return (location.hash || "").includes("type=recovery")
-    || new URLSearchParams(location.search).get("type") === "recovery";
-}
-
 async function boot() {
-  // Set before anything else can rewrite the URL and erase the marker.
-  if (isRecoveryUrl()) recoveryMode = true;
   document.documentElement.lang = lang;
   document.title = t("appName");
-  applySharedConfigFromUrl();
-  if (!cfg || !cfg.url || !cfg.anonKey) { render(); return; }
-  if (typeof supabase === "undefined") {
-    authError = t("supabaseLoadFail");
+  checkForResetToken();
+  if (!pyBackend || !pyBackend.url) { render(); return; }
+  if (!pyBackend.token) { render(); return; }
+  // A saved token might have expired since last time — check it once up
+  // front rather than letting every subsequent request fail with a
+  // confusing 401.
+  const me = await db.auth.me();
+  if (me.error) {
+    pyBackend.token = null;
+    savePyConfig(pyBackend);
     render();
     return;
   }
-  supabaseClient = supabase.createClient(cfg.url, cfg.anonKey);
-  const { data } = await db.auth.getSession();
-  session = data.session || null;
-  db.auth.onAuthStateChange((event, s) => {
-    if (event === "PASSWORD_RECOVERY") { recoveryMode = true; session = s; render(); return; }
-    const wasLoggedIn = !!session;
-    session = s;
-    if (!!session !== wasLoggedIn) { dataLoaded = false; if (!session) teardownRealtime(); render(); if (session) loadAllData(); }
-  });
-  if (session && !recoveryMode) { await loadAllData(); } else { render(); }
+  session = { user: { id: me.data.id, email: me.data.email } };
+  if (resetMode) { render(); return; }
+  await loadAllData();
 }
 
 // A day that ended without anyone closing it. The scheduled job in the
@@ -1210,14 +1053,13 @@ async function closeForgottenDays() {
 async function loadAllData() {
   syncStatus = "syncing"; render();
   try {
-    const uidUser = session.user.id;
     await closeForgottenDays();
-    const [settingsRes, productsRes, customersRes, docsRes, cashRes, entriesRes] = await db.loadAll(uidUser);
+    const [settingsRes, productsRes, customersRes, docsRes, cashRes, entriesRes] = await db.loadAll();
     if (settingsRes.error || productsRes.error || customersRes.error || docsRes.error || cashRes.error || entriesRes.error) throw (settingsRes.error || productsRes.error || customersRes.error || docsRes.error || cashRes.error || entriesRes.error);
 
     let settingsRow = settingsRes.data;
     if (!settingsRow) {
-      const ins = await db.insertDefaultSettings(uidUser);
+      const ins = await db.insertDefaultSettings();
       if (ins.error) throw ins.error;
       settingsRow = ins.data;
     }
@@ -1244,39 +1086,31 @@ async function loadAllData() {
 
 function setupRealtime() {
   teardownRealtime();
-  const uidUser = session.user.id;
-  realtimeChannel = db.subscribeRealtime(uidUser, refetchTable);
-  // The Supabase channel above still covers "settings" either way (that
-  // resource never moved — see docs/python-backend-plan.md). This one
-  // covers everything that has: products, customers, documents, and the
-  // cash register, pushed from backend/app/realtime.py.
-  if (pyBackend && pyBackend.token) pyRealtimeSocket = db.subscribePyRealtime(refetchTable);
+  if (pyBackend && pyBackend.token) pyRealtimeSocket = db.subscribeRealtime(refetchTable);
 }
 function teardownRealtime() {
-  if (realtimeChannel) { db.unsubscribeRealtime(realtimeChannel); realtimeChannel = null; }
-  if (pyRealtimeSocket) { db.unsubscribePyRealtime(pyRealtimeSocket); pyRealtimeSocket = null; }
+  if (pyRealtimeSocket) { db.unsubscribeRealtime(pyRealtimeSocket); pyRealtimeSocket = null; }
 }
 
 async function refetchTable(table) {
   if (!session) return;
-  const uidUser = session.user.id;
   if (table === "products") {
-    const { data, error } = await db.listProducts(uidUser);
+    const { data, error } = await db.listProducts();
     if (!error) { state.products = data; cacheState(); render(); }
   } else if (table === "customers") {
-    const { data, error } = await db.listCustomers(uidUser);
+    const { data, error } = await db.listCustomers();
     if (!error) { state.customers = data.map(customerRowToObj); cacheState(); render(); }
   } else if (table === "documents") {
-    const { data, error } = await db.listDocuments(uidUser);
+    const { data, error } = await db.listDocuments();
     if (!error) { state.documents = data.map(docRowToObj); cacheState(); render(); }
   } else if (table === "settings") {
-    const { data, error } = await db.getSettings(uidUser);
+    const { data, error } = await db.getSettings();
     if (!error && data) { state.settings = settingsRowToObj(data); cacheState(); render(); }
   } else if (table === "cash_closings") {
-    const { data, error } = await db.listCashClosings(uidUser);
+    const { data, error } = await db.listCashClosings();
     if (!error) { state.cashClosings = data.map(cashClosingRowToObj); cacheState(); render(); }
   } else if (table === "cash_entries") {
-    const { data, error } = await db.listCashEntries(uidUser);
+    const { data, error } = await db.listCashEntries();
     if (!error) { state.cashEntries = data.map(cashEntryRowToObj); cacheState(); render(); }
   }
 }
@@ -1288,14 +1122,14 @@ function flashSaved(ok, msg) {
 }
 
 // =========================================================================
-// Connection setup screen (Supabase URL + anon key)
+// Connection setup screen (Python backend URL)
 // =========================================================================
-let connForm = { url: "", anonKey: "" };
+let connForm = { url: "" };
 function updateConnField(field, value) { connForm[field] = value; }
 function saveConnection() {
-  if (!connForm.url.trim() || !connForm.anonKey.trim()) { authError = t("fillBoth"); render(); return; }
-  saveConfig({ url: connForm.url.trim(), anonKey: connForm.anonKey.trim() });
-  cfg = loadConfig();
+  if (!connForm.url.trim()) { authError = t("fillUrl"); render(); return; }
+  pyBackend = { url: connForm.url.trim().replace(/\/+$/, ""), token: null };
+  savePyConfig(pyBackend);
   authError = "";
   boot();
 }
@@ -1317,8 +1151,7 @@ function renderConnectionSetup() {
         <h2>${t("connectTitle")}</h2>
         <p class="muted" style="font-size:13px;">${t("connectHelp")}</p>
         ${authError ? `<div class="error-box">${esc(authError)}</div>` : ""}
-        <div class="field-wrap"><label class="field">${t("projectUrl")}</label><input value="${esc(connForm.url)}" oninput="updateConnField('url', this.value)" placeholder="https://xxxx.supabase.co"></div>
-        <div class="field-wrap"><label class="field">${t("anonKey")}</label><input value="${esc(connForm.anonKey)}" oninput="updateConnField('anonKey', this.value)" placeholder="eyJhbGciOi..."></div>
+        <div class="field-wrap"><label class="field">${t("backendUrl")}</label><input value="${esc(connForm.url)}" oninput="updateConnField('url', this.value)" placeholder="http://localhost:8000"></div>
         <button class="primary" style="width:100%;" onclick="saveConnection()">${t("connect")}</button>
       </div>
     </div>
@@ -1335,63 +1168,71 @@ function updateNewPasswordField(field, value) { newPasswordForm[field] = value; 
 function switchAuthScreen(s) { authScreen = s; authError = ""; authNotice = ""; render(); }
 async function doLogin() {
   authBusy = true; authError = ""; authNotice = ""; render();
-  const { error } = await db.auth.signInWithPassword({ email: authForm.email.trim(), password: authForm.password });
+  const res = await db.auth.login(authForm.email.trim(), authForm.password);
+  if (res.error) { authBusy = false; authError = res.error.message; render(); return; }
+  pyBackend.token = res.data.access_token;
+  savePyConfig(pyBackend);
+  const me = await db.auth.me();
   authBusy = false;
-  if (error) { authError = error.message === "Invalid login credentials" ? t("wrongCredentials") : error.message; render(); }
+  if (me.error) { authError = me.error.message; render(); return; }
+  session = { user: { id: me.data.id, email: me.data.email } };
+  dataLoaded = false;
+  render();
+  await loadAllData();
 }
 async function doSignup() {
   authBusy = true; authError = ""; authNotice = ""; render();
-  const { error } = await db.auth.signUp({ email: authForm.email.trim(), password: authForm.password });
+  const res = await db.auth.signup(authForm.email.trim(), authForm.password);
+  if (res.error) { authBusy = false; authError = res.error.message; render(); return; }
+  // No email confirmation step on this backend, so signing up can go
+  // straight into the app with the token it already handed back, rather
+  // than sending them to the login screen to type the same password again.
+  pyBackend.token = res.data.access_token;
+  savePyConfig(pyBackend);
+  const me = await db.auth.me();
   authBusy = false;
-  if (error) { authError = error.message; render(); return; }
-  authNotice = t("accountCreated");
-  authScreen = "login"; render();
+  if (me.error) { authError = me.error.message; render(); return; }
+  session = { user: { id: me.data.id, email: me.data.email } };
+  dataLoaded = false;
+  render();
+  await loadAllData();
 }
-// Sends a Supabase recovery email. The link in it brings the user back here
-// with a short-lived recovery session, which flips the app into recoveryMode
-// (see boot) so they can set a new password.
 async function doPasswordReset() {
   const email = authForm.email.trim();
   if (!email || !isValidEmail(email)) { authError = t("invalidEmail"); render(); return; }
   authBusy = true; authError = ""; authNotice = ""; render();
-  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  const res = await db.auth.forgotPassword(email);
   authBusy = false;
-  if (error) { authError = error.message; render(); return; }
+  if (res.error) { authError = res.error.message; render(); return; }
   authNotice = t("resetSent", { email });
   authScreen = "login"; render();
 }
-async function doUpdatePassword() {
+async function doResetPassword() {
   if (!newPasswordForm.password || newPasswordForm.password.length < 6) { authError = t("passwordMin6"); render(); return; }
   if (newPasswordForm.password !== newPasswordForm.confirm) { authError = t("passwordsDontMatch"); render(); return; }
   authBusy = true; authError = ""; render();
-  const { error } = await db.auth.updateUser({ password: newPasswordForm.password });
+  const res = await db.auth.resetPassword(resetToken, newPasswordForm.password);
   authBusy = false;
-  if (error) {
-    authError = /session missing|session_not_found|Auth session/i.test(error.message)
-      ? t("linkExpired")
-      : error.message;
-    render();
-    return;
-  }
+  if (res.error) { authError = res.error.message; render(); return; }
   newPasswordForm = { password: "", confirm: "" };
-  recoveryMode = false;
-  history.replaceState({}, "", location.pathname);
+  resetMode = false; resetToken = null;
   authNotice = t("passwordChangedNotice");
   alert(t("passwordChanged"));
-  if (session && !dataLoaded) { render(); await loadAllData(); } else { render(); }
-}
-function cancelRecovery() {
-  recoveryMode = false; authError = ""; newPasswordForm = { password: "", confirm: "" };
-  history.replaceState({}, "", location.pathname);
+  authScreen = "login";
   render();
 }
-async function doLogout() {
-  await db.auth.signOut();
+function cancelReset() {
+  resetMode = false; resetToken = null; authError = ""; newPasswordForm = { password: "", confirm: "" };
+  render();
+}
+function doLogout() {
+  pyBackend.token = null;
+  savePyConfig(pyBackend);
   teardownRealtime();
-  dataLoaded = false; state = defaultState();
+  session = null; dataLoaded = false; state = defaultState();
   render();
 }
-function forgetConnection() { if (confirm(t("forgetConnectionConfirm"))) { clearConfig(); location.reload(); } }
+function forgetConnection() { if (confirm(t("forgetConnectionConfirm"))) { clearPyConfig(); location.reload(); } }
 
 function renderAuth() {
   const isLogin = authScreen === "login";
@@ -1434,25 +1275,7 @@ function renderAuth() {
   `;
 }
 
-function renderNewPassword() {
-  // The recovery link is only usable if it actually established a session.
-  // Without this check the form would look fine and then fail on save with
-  // an opaque "Auth session missing" from Supabase.
-  if (!session) {
-    return `
-      <div class="auth-wrap">
-        <div class="auth-card">
-          ${renderLangToggle()}
-          <h2>${t("linkInvalidTitle")}</h2>
-          <div class="error-box">${t("linkInvalidBody")}</div>
-          <p class="muted" style="font-size:13px;">${t("linkInvalidHelp")}</p>
-          <button class="primary" style="width:100%;" onclick="cancelRecovery(); switchAuthScreen('reset')">${t("requestNewLink")}</button>
-          <div class="auth-toggle"><a onclick="cancelRecovery()">${t("backToLogin")}</a></div>
-          <div class="auth-toggle"><a onclick="forgetConnection()">${t("changeConnection")}</a></div>
-        </div>
-      </div>
-    `;
-  }
+function renderResetPassword() {
   return `
     <div class="auth-wrap">
       <div class="auth-card">
@@ -1462,8 +1285,8 @@ function renderNewPassword() {
         ${authError ? `<div class="error-box">${esc(authError)}</div>` : ""}
         <div class="field-wrap"><label class="field">${t("newPasswordLabel")}</label><input type="password" value="${esc(newPasswordForm.password)}" oninput="updateNewPasswordField('password', this.value)"></div>
         <div class="field-wrap"><label class="field">${t("repeatPassword")}</label><input type="password" value="${esc(newPasswordForm.confirm)}" oninput="updateNewPasswordField('confirm', this.value)"></div>
-        <button class="primary" style="width:100%;" ${authBusy ? "disabled" : ""} onclick="doUpdatePassword()">${authBusy ? t("pleaseWait") : t("savePassword")}</button>
-        <div class="auth-toggle"><a onclick="cancelRecovery()">${t("backToLogin")}</a></div>
+        <button class="primary" style="width:100%;" ${authBusy ? "disabled" : ""} onclick="doResetPassword()">${authBusy ? t("pleaseWait") : t("savePassword")}</button>
+        <div class="auth-toggle"><a onclick="cancelReset()">${t("backToLogin")}</a></div>
       </div>
     </div>
   `;
@@ -1512,9 +1335,8 @@ function renderSearchBox(kind, value, placeholder, shownCount, totalCount) {
 
 function render() {
   const root = document.getElementById("root");
-  if (!cfg) { root.innerHTML = renderConnectionSetup(); return; }
-  if (!supabaseClient) { root.innerHTML = renderConnectionSetup(); return; }
-  if (recoveryMode) { root.innerHTML = renderNewPassword(); return; }
+  if (!pyBackend || !pyBackend.url) { root.innerHTML = renderConnectionSetup(); return; }
+  if (resetMode) { root.innerHTML = renderResetPassword(); return; }
   if (!session) { root.innerHTML = renderAuth(); return; }
   if (!dataLoaded) { root.innerHTML = `<div class="auth-wrap"><div class="muted">${t("loadingData")}</div></div>`; return; }
 
@@ -1783,7 +1605,7 @@ function allCategories() {
   return out;
 }
 async function saveCategories(cfg) {
-  const res = await db.updateSettings(session.user.id, { categories: cfg });
+  const res = await db.updateSettings({ categories: cfg });
   if (res.error) {
     // The shop owner gets one plain sentence — the real reason (a missing column
     // after a schema change, a dropped connection) means nothing to them. It goes
@@ -1828,7 +1650,7 @@ async function renameCategory(oldName) {
   // Products have to move with the rename, or the old name walks straight back
   // into the list as an "in use" category.
   if (categoryUsage(oldName)) {
-    const res = await db.renameProductsCategory(session.user.id, oldName, name);
+    const res = await db.renameProductsCategory(oldName, name);
     if (res.error) { console.error("renaming category on products failed", res.error); alert(t("categorySaveFailed")); return; }
   }
   if (!await saveCategories(cfg)) return;
@@ -2675,12 +2497,6 @@ function dayTotals(date, closing) {
   const s = computeCashSummary(date);
   return { byMethod: s.byMethod, total: s.total, invoiceCount: s.invoiceCount, entryCount: s.entries.length };
 }
-// PostgREST reports a column the table doesn't have as PGRST204. Here that
-// means the saved-totals columns are missing, i.e. the schema update hasn't
-// been run yet — worth saying plainly instead of showing the raw error.
-function isMissingColumnError(err) {
-  return !!err && (err.code === "PGRST204" || /total_cash|invoice_count/.test(err.message || ""));
-}
 function updateCashViewDate(v) { cashViewDate = v; cashForm = null; cashEntryForm = null; render(); }
 function beginCashEntry() {
   if (closingFor(cashViewDate)) { alert(t("closedDayLocked")); return; }
@@ -2730,7 +2546,7 @@ async function saveCashClosing() {
     auto_closed: false
   };
   const res = await db.upsertCashClosing(row);
-  if (res.error) { flashSaved(false, isMissingColumnError(res.error) ? t("closingNeedsSchema") : t("errorPrefix") + res.error.message); return; }
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   const obj = cashClosingRowToObj(res.data);
   const idx = state.cashClosings.findIndex(c => c.date === obj.date);
   if (idx >= 0) state.cashClosings[idx] = obj; else state.cashClosings.push(obj);
@@ -2739,7 +2555,7 @@ async function saveCashClosing() {
 }
 async function reopenDay() {
   if (!confirm(t("reopenConfirm"))) return;
-  const res = await db.deleteCashClosing(session.user.id, cashViewDate);
+  const res = await db.deleteCashClosing(cashViewDate);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.cashClosings = state.cashClosings.filter(c => c.date !== cashViewDate);
   cashForm = null;
@@ -2882,7 +2698,7 @@ async function saveSettings() {
   ensureSettingsForm();
   settingsErrors = validateSettings(settingsForm);
   if (Object.keys(settingsErrors).length) { render(); return; }
-  const res = await db.updateSettings(session.user.id, settingsObjToRow(settingsForm));
+  const res = await db.updateSettings(settingsObjToRow(settingsForm));
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.settings = settingsRowToObj(res.data);
   settingsForm = null; settingsEditing = false; settingsErrors = {};
@@ -2922,56 +2738,7 @@ function renderSettings() {
     </div>
     <p class="muted">${t("accountantHint")}</p>
     ${renderCategoriesCard()}
-    ${renderPyBackendCard()}
   `;
-}
-
-// ---------- Python backend connection (experimental) ----------
-function renderPyBackendCard() {
-  const connected = !!(pyBackend && pyBackend.token);
-  return `
-    <div class="card">
-      <h3 style="margin-top:0;">${t("pyBackendTitle")}</h3>
-      <p class="muted" style="margin-top:0;">${t("pyBackendHint")}</p>
-      ${connected
-        ? `<p>${t("pyBackendConnectedTo", { url: esc(pyBackend.url) })}</p>
-           <button class="danger" onclick="disconnectPyBackend()">${t("pyBackendDisconnect")}</button>`
-        : `<button onclick="connectPyBackend()">${t("pyBackendConnect")}</button>`}
-    </div>
-  `;
-}
-async function connectPyBackend() {
-  const url = prompt(t("pyBackendUrlPrompt"), (pyBackend && pyBackend.url) || "http://localhost:8000");
-  if (url == null) return;
-  const trimmedUrl = url.trim().replace(/\/+$/, "");
-  if (!trimmedUrl) return;
-  const email = prompt(t("pyBackendEmailPrompt"));
-  if (email == null || !email.trim()) return;
-  const password = prompt(t("pyBackendPasswordPrompt"));
-  if (password == null || !password) return;
-
-  let res = await db.pyLogin(trimmedUrl, email.trim(), password);
-  if (res.error) {
-    // An unrecognized account is the common case on a first connect —
-    // offer to create one on the spot rather than sending them hunting for
-    // a separate signup screen.
-    if (!confirm(t("pyBackendLoginFailedOfferSignup", { error: res.error.message }))) return;
-    res = await db.pySignup(trimmedUrl, email.trim(), password);
-    if (res.error) { alert(t("pyBackendConnectFailed", { error: res.error.message })); return; }
-  }
-  pyBackend = { url: trimmedUrl, token: res.data.access_token };
-  savePyConfig(pyBackend);
-  alert(t("pyBackendConnected"));
-  await Promise.all([refetchTable("products"), refetchTable("customers"), refetchTable("documents"), refetchTable("cash_closings"), refetchTable("cash_entries")]);
-  setupRealtime();
-  render();
-}
-async function disconnectPyBackend() {
-  if (!confirm(t("pyBackendDisconnectConfirm"))) return;
-  clearPyConfig();
-  await Promise.all([refetchTable("products"), refetchTable("customers"), refetchTable("documents"), refetchTable("cash_closings"), refetchTable("cash_entries")]);
-  setupRealtime();
-  render();
 }
 
 // The one shared list, managed in one place. Built-in and added categories are
@@ -3149,7 +2916,7 @@ async function runImport(imported, mode, opts) {
     const uid = session.user.id;
     if (mode === "replace") {
       for (const table of ["documents", "cash_entries", "cash_closings", "products", "customers"]) {
-        const { error } = await db.deleteAllRows(table, uid);
+        const { error } = await db.deleteAllRows(table);
         if (error) throw error;
       }
     }
@@ -3174,7 +2941,7 @@ async function runImport(imported, mode, opts) {
 
     // Customers must be on hand before documents, so each document can be tied
     // back to its customer row instead of keeping only a name.
-    const { data: custRows } = await db.selectAll("customers", uid);
+    const { data: custRows } = await db.selectAll("customers");
     const byIdentity = new Map();
     (custRows || []).forEach(r => {
       byIdentity.set(normStr(r.name).toLowerCase() + "|" + normStr(r.eik), r.id);
@@ -3305,7 +3072,7 @@ async function restoreSettings(imported, mode, insertedDocs) {
   }
 
   if (!Object.keys(patch).length) return;
-  const { error } = await db.updateSettingsNoReturn(uid, patch);
+  const { error } = await db.updateSettingsNoReturn(patch);
   if (error) throw error;
 }
 

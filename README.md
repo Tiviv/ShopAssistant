@@ -4,11 +4,16 @@ A small offline-style invoicing/inventory app for a produce/grocery wholesale
 business, now backed by [Supabase](https://supabase.com) (free tier) instead
 of only browser `localStorage`.
 
-> This branch (`feature/python_backend`) is a parallel, non-breaking track
-> that's gradually growing a Python (FastAPI) backend alongside the Supabase
-> one described below — see `docs/python-backend-plan.md` and
-> `docs/python-backend-progress.md`. Everything below this note still
-> describes the Supabase version that actually runs today.
+> **This branch (`feature/python_backend`) no longer uses Supabase.** It
+> replaces it entirely with a Python (FastAPI) backend we own — see
+> `docs/python-backend-plan.md` and `docs/python-backend-progress.md` for
+> how that happened, and `backend/README.md` for how to run it. `main` is
+> untouched and still runs the Supabase version described below; most of
+> this document (the product itself — invoicing, categories, language,
+> backup/restore semantics) applies equally to both, but the **One-time
+> setup**, **Password reset**, and **Sharing a ready-to-open link**
+> sections below describe `main`'s Supabase setup specifically — on this
+> branch, see `backend/README.md` instead.
 
 ## What changed from the original offline version
 
@@ -214,6 +219,11 @@ Printed documents follow their own rule, not the interface toggle:
 
 ### Password reset
 
+*(This section describes `main`'s Supabase-based reset. On this branch,
+reset is handled by our own backend instead — see the SMTP setup in
+`backend/README.md`; the on-screen flow looks the same, just backed by a
+different sender.)*
+
 The login screen has a "Забравена парола?" / "Forgot password?" link: enter the account email,
 Supabase emails a recovery link, and opening it brings you back to the app
 on a "Нова парола" screen to set a new one.
@@ -234,6 +244,10 @@ password directly from **Authentication → Users** in the Supabase dashboard
 (the row's "…" menu offers a password-recovery / reset action).
 
 ### Sharing a ready-to-open link
+
+*(This section describes `main`'s Supabase `?url=&key=` link-sharing. This
+branch's connect screen only asks for the backend's own URL — there's no
+separate anon key to share, so this mechanism doesn't apply here.)*
 
 Anyone who opens the plain `index.html` URL has to paste in the Project URL
 and anon key by hand before they even reach login — fine for you, but
