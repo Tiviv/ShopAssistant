@@ -111,3 +111,45 @@ class Document(Base):
     converted_from_offer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     payment_method: Mapped[str] = mapped_column(String, nullable=False, default="cash")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# Mirrors supabase/schema.sql's `cash_entries` table — walk-in/till sales
+# that never go through the invoice flow.
+class CashEntry(Base):
+    __tablename__ = "cash_entries"
+    __table_args__ = (
+        CheckConstraint("payment_method in ('cash', 'card', 'bank')", name="cash_entries_payment_method_check"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    date: Mapped[date_] = mapped_column(Date, nullable=False, index=True)
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    payment_method: Mapped[str] = mapped_column(String, nullable=False, default="cash")
+    note: Mapped[str] = mapped_column(String, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# Mirrors supabase/schema.sql's `cash_closings` table — one row per calendar
+# day, keyed by (owner_id, date) rather than its own id, same as there.
+# total* stays nullable: a day closed before these columns existed has no
+# snapshot, and the frontend recomputes it live instead of showing 0.
+class CashClosing(Base):
+    __tablename__ = "cash_closings"
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    date: Mapped[date_] = mapped_column(Date, primary_key=True)
+    counted_cash: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    note: Mapped[str] = mapped_column(String, nullable=False, default="")
+    closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    total_cash: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    total_card: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    total_bank: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    total: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    invoice_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    entry_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    auto_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

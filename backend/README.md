@@ -22,16 +22,27 @@ Currently implemented:
   `POST /documents/next-number` — an atomic, race-free counter (a single
   `UPDATE ... RETURNING`, same row-lock guarantee the old Postgres function
   gave). Stock movement is `POST /products/{id}/adjust-stock`.
+- **Phase 5 — cash register.** `cash_entries` (walk-in/till sales) is plain
+  owner-scoped CRUD. `cash_closings` is keyed by `(owner_id, date)` rather
+  than an id, so it gets `PUT`/`DELETE /cash_closings/{date}` instead
+  (upsert to close a day, delete to reopen it). Auto-closing forgotten days
+  — `POST /cash_closings/close-forgotten-days` — is one raw SQL statement
+  mirroring `close_finished_days()` from `supabase/schema.sql` closely on
+  purpose, so the money aggregation can't drift from the original. No cron
+  job calls this here; the frontend calling it on every load (as the
+  original schema's own fallback for a project without `pg_cron` already
+  does) is the only mechanism, by design.
 
 In `index.html`, connect via the "Python backend (experimental)" card on
 the Settings tab — it's a separate, optional connection from the Supabase
-one; while connected, product, customer, and document writes go here
-instead of Supabase, nothing else changes. One thing worth knowing: once
-documents are backend-managed, Supabase's own invoice/offer/credit
-counters stop advancing, so the "next number" shown on the Settings tab
-goes stale until you disconnect — the UI says so.
+one; while connected, product, customer, document, and cash-register
+writes go here instead of Supabase, nothing else changes. One thing worth
+knowing: once documents are backend-managed, Supabase's own
+invoice/offer/credit counters stop advancing, so the "next number" shown
+on the Settings tab goes stale until you disconnect — the UI says so.
 
-Cash-register endpoints come in a later phase.
+Every phase from the original plan is done except realtime (6) and
+backup/restore (7) — both explicitly deferred from the start.
 
 ## One-time setup
 

@@ -143,6 +143,58 @@ class LinkCustomerRequest(BaseModel):
     customer_id: uuid.UUID
 
 
+class CashEntryIn(BaseModel):
+    date: date
+    amount: float = 0
+    payment_method: PaymentMethod = "cash"
+    note: str = ""
+
+
+class CashEntryOut(BaseModel):
+    id: uuid.UUID
+    date: date
+    amount: float
+    payment_method: str
+    note: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# No `date` field: the date is the URL path segment (the table's composite
+# key is (owner_id, date), so it's never something this body could change).
+class CashClosingIn(BaseModel):
+    counted_cash: float = 0
+    note: str = ""
+    total_cash: float | None = None
+    total_card: float | None = None
+    total_bank: float | None = None
+    total: float | None = None
+    invoice_count: int | None = None
+    entry_count: int | None = None
+    auto_closed: bool = False
+
+
+class CashClosingOut(BaseModel):
+    date: date
+    counted_cash: float
+    note: str
+    closed_at: datetime
+    total_cash: float | None
+    total_card: float | None
+    total_bank: float | None
+    total: float | None
+    invoice_count: int | None
+    entry_count: int | None
+    auto_closed: bool
+
+    model_config = {"from_attributes": True}
+
+
+class CloseForgottenDaysResponse(BaseModel):
+    closed: int
+
+
 class SettingsOut(BaseModel):
     owner_id: uuid.UUID
     company_name: str
