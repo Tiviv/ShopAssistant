@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Product, User
-from app.schemas import ProductIn, ProductOut, RenameCategoryRequest
+from app.schemas import AdjustStockRequest, ProductIn, ProductOut, RenameCategoryRequest
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -84,4 +84,25 @@ async def delete_product(
 ) -> None:
     product = await _get_owned_product(product_id, current_user, db)
     await db.delete(product)
+    await db.commit()
+
+
+@router.post("/{product_id}/adjust-stock", status_code=status.HTTP_204_NO_CONTENT)
+async def adjust_stock(
+    product_id: uuid.UUID,
+    body: AdjustStockRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    # Mirrors the Supabase adjust_stock() RPC: called once per line item
+    # when an invoice/credit note is saved. Positive qty decrements (an
+    # invoice line), negative restores (a credit-note line). Silently a
+    # no-op if the product doesn't exist, isn't owned by this user, or has
+    # stock=null ("not tracked") — same as the original SQL, which updates
+    # zero rows in each of those cases without raising.
+    await db.execute(
+        update(Product)
+        .where(Product.id == product_id, Product.owner_id == current_user.id, Product.stock.isnot(None))
+        .values(stock=Product.stock - body.qty)
+    )
     await db.commit()

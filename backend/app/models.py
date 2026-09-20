@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import date as date_, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, Numeric, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -75,4 +75,39 @@ class Customer(Base):
     address: Mapped[str] = mapped_column(String, nullable=False, default="")
     phone: Mapped[str] = mapped_column(String, nullable=False, default="")
     email: Mapped[str] = mapped_column(String, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# Mirrors supabase/schema.sql's `documents` table (invoices, offers, and
+# credit notes all live in one table, distinguished by doc_type). Line items
+# are stored as opaque JSON, same as there — the backend never validates
+# their shape, just persists whatever the frontend sends.
+class Document(Base):
+    __tablename__ = "documents"
+    __table_args__ = (
+        CheckConstraint("doc_type in ('invoice', 'offer', 'credit')", name="documents_doc_type_check"),
+        CheckConstraint("payment_method in ('cash', 'card', 'bank')", name="documents_payment_method_check"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    doc_type: Mapped[str] = mapped_column(String, nullable=False)
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
+    date: Mapped[date_] = mapped_column(Date, nullable=False)
+    customer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True
+    )
+    customer_name: Mapped[str] = mapped_column(String, nullable=False, default="")
+    customer_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    vat_rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, default=20)
+    subtotal: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    vat_amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    total: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    related_invoice_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    converted_from_offer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    payment_method: Mapped[str] = mapped_column(String, nullable=False, default="cash")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

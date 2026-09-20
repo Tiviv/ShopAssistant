@@ -14,13 +14,24 @@ Currently implemented:
   old name).
 - **Phase 3 — customers.** Same shape: list/create/update/delete, owner-
   scoped.
+- **Phase 4 — documents** (invoices/offers/credit notes). List/create, an
+  edit endpoint limited to the fields a document can actually change after
+  creation (type, number and the offer/invoice/credit relations are fixed
+  at creation), separate endpoints for toggling `paid` and linking a
+  customer (both partial patches, not a full-row replace), delete, and
+  `POST /documents/next-number` — an atomic, race-free counter (a single
+  `UPDATE ... RETURNING`, same row-lock guarantee the old Postgres function
+  gave). Stock movement is `POST /products/{id}/adjust-stock`.
 
 In `index.html`, connect via the "Python backend (experimental)" card on
 the Settings tab — it's a separate, optional connection from the Supabase
-one; while connected, product and customer writes go here instead of
-Supabase, nothing else changes.
+one; while connected, product, customer, and document writes go here
+instead of Supabase, nothing else changes. One thing worth knowing: once
+documents are backend-managed, Supabase's own invoice/offer/credit
+counters stop advancing, so the "next number" shown on the Settings tab
+goes stale until you disconnect — the UI says so.
 
-Documents/cash-register endpoints come in later phases.
+Cash-register endpoints come in a later phase.
 
 ## One-time setup
 

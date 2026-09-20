@@ -360,11 +360,11 @@ const TRANSLATIONS = {
     categoryInUse: "„{name}“ се използва от {n}. Преместете ги в друга категория, преди да я изтриете.",
     usedByProducts: "{n} продукта", usedByProduct: "1 продукт", categoryNotUsed: "не се използва",
     pyBackendTitle: "Python бекенд (експериментално)",
-    pyBackendHint: "Отделна, незадължителна връзка към Python бекенда от docs/python-backend-plan.md. Докато е свързана, продуктите и клиентите (добавяне/редакция/изтриване) се пазят там вместо в Supabase — останалите данни не се засягат. Внимание: докато е свързан, тези данни не участват в JSON резервно копие/възстановяване или в живата синхронизация между устройства — това идва в по-късна фаза.",
+    pyBackendHint: "Отделна, незадължителна връзка към Python бекенда от docs/python-backend-plan.md. Докато е свързана, продуктите, клиентите и документите (фактури/оферти/кредитни известия — създаване, редакция, изтриване, номерация, движение на наличности) се пазят там вместо в Supabase — останалите данни не се засягат. Внимание: докато е свързан, тези данни не участват в JSON резервно копие/възстановяване или в живата синхронизация между устройства (по-късна фаза), а бройката „следващ номер“ в Настройки спира да се обновява, защото номерата вече идват от Python бекенда.",
     pyBackendConnect: "Свържи Python бекенд",
-    pyBackendConnectedTo: "Свързан към {url} — продуктите и клиентите се пазят там.",
+    pyBackendConnectedTo: "Свързан към {url} — продуктите, клиентите и документите се пазят там.",
     pyBackendDisconnect: "Прекъсни връзката (данните се връщат в Supabase)",
-    pyBackendDisconnectConfirm: "Продуктите и клиентите отново ще се пазят в Supabase. Данните, добавени в Python бекенда, остават там — не се трият.",
+    pyBackendDisconnectConfirm: "Продуктите, клиентите и документите отново ще се пазят в Supabase — и номерацията на фактури/оферти/кредитни известия ще продължи от Supabase броячите, не от тези на Python бекенда. Данните, добавени в Python бекенда, остават там — не се трият.",
     pyBackendUrlPrompt: "Адрес на Python бекенда:",
     pyBackendEmailPrompt: "Имейл за Python бекенда:",
     pyBackendPasswordPrompt: "Парола:",
@@ -565,11 +565,11 @@ const TRANSLATIONS = {
     categoryInUse: "\u201c{name}\u201d is used by {n}. Move them to another category before deleting it.",
     usedByProducts: "{n} products", usedByProduct: "1 product", categoryNotUsed: "not used",
     pyBackendTitle: "Python backend (experimental)",
-    pyBackendHint: "A separate, optional connection to the Python backend from docs/python-backend-plan.md. While connected, product and customer writes (add/edit/delete) go there instead of Supabase — nothing else is affected. Note: while connected, that data is left out of the JSON backup/restore and out of live multi-device sync — those come in a later phase.",
+    pyBackendHint: "A separate, optional connection to the Python backend from docs/python-backend-plan.md. While connected, products, customers, and documents (invoices/offers/credit notes — create, edit, delete, numbering, stock movement) are stored there instead of Supabase — nothing else is affected. Note: while connected, that data is left out of the JSON backup/restore and out of live multi-device sync (a later phase), and the “next number” shown in Settings stops updating, since numbers now come from the Python backend instead.",
     pyBackendConnect: "Connect Python backend",
-    pyBackendConnectedTo: "Connected to {url} — products and customers are stored there.",
+    pyBackendConnectedTo: "Connected to {url} — products, customers, and documents are stored there.",
     pyBackendDisconnect: "Disconnect (data goes back to Supabase)",
-    pyBackendDisconnectConfirm: "Products and customers will be stored in Supabase again. Data already added to the Python backend stays there — nothing is deleted.",
+    pyBackendDisconnectConfirm: "Products, customers, and documents will be stored in Supabase again — and invoice/offer/credit-note numbering will resume from Supabase's own counters, not the Python backend's. Data already added to the Python backend stays there — nothing is deleted.",
     pyBackendUrlPrompt: "Python backend URL:",
     pyBackendEmailPrompt: "Email for the Python backend:",
     pyBackendPasswordPrompt: "Password:",
@@ -892,7 +892,7 @@ async function pyRequest(baseUrl, token, method, path, body) {
 function usingPyBackendFor(table) {
   // Grows as more resources get a Python endpoint (see docs/python-backend-plan.md)
   // — one connection, whose scope widens with each phase.
-  return ["products", "customers"].includes(table) && !!(pyBackend && pyBackend.token);
+  return ["products", "customers", "documents"].includes(table) && !!(pyBackend && pyBackend.token);
 }
 
 const db = {
@@ -907,8 +907,15 @@ const db = {
   },
 
   closeMyFinishedDays: () => supabaseClient.rpc("close_my_finished_days"),
-  nextDocumentNumber: (docType) => supabaseClient.rpc("next_document_number", { p_doc_type: docType }),
-  adjustStock: (productId, qty) => supabaseClient.rpc("adjust_stock", { p_product_id: productId, p_qty: qty }),
+  // The Python endpoint returns {number: N}; unwrapped here so the result
+  // still looks like the Supabase RPC's { data: N, error } to every caller.
+  nextDocumentNumber: (docType) => usingPyBackendFor("documents")
+    ? db.pyFetch("POST", "/documents/next-number", { doc_type: docType })
+        .then(res => res.error ? res : { data: res.data.number, error: null })
+    : supabaseClient.rpc("next_document_number", { p_doc_type: docType }),
+  adjustStock: (productId, qty) => usingPyBackendFor("products")
+    ? db.pyFetch("POST", `/products/${productId}/adjust-stock`, { qty })
+    : supabaseClient.rpc("adjust_stock", { p_product_id: productId, p_qty: qty }),
 
   // ---- Python backend (experimental, see docs/python-backend-plan.md) ----
   pyFetch: (method, path, body) => pyRequest(pyBackend.url, pyBackend.token, method, path, body),
@@ -923,7 +930,9 @@ const db = {
   listCustomers: (ownerId) => usingPyBackendFor("customers")
     ? db.pyFetch("GET", "/customers")
     : supabaseClient.from("customers").select("*").eq("owner_id", ownerId).order("name"),
-  listDocuments: (ownerId) => supabaseClient.from("documents").select("*").eq("owner_id", ownerId).order("created_at"),
+  listDocuments: (ownerId) => usingPyBackendFor("documents")
+    ? db.pyFetch("GET", "/documents")
+    : supabaseClient.from("documents").select("*").eq("owner_id", ownerId).order("created_at"),
   listCashClosings: (ownerId) => supabaseClient.from("cash_closings").select("*").eq("owner_id", ownerId).order("date"),
   listCashEntries: (ownerId) => supabaseClient.from("cash_entries").select("*").eq("owner_id", ownerId).order("created_at"),
   selectAll: (table, ownerId) => supabaseClient.from(table).select("*").eq("owner_id", ownerId),
@@ -972,7 +981,14 @@ const db = {
     : supabaseClient.from("products").update({ category: newName }).eq("owner_id", ownerId).eq("category", oldName),
 
   // ---- documents: link a customer without needing the row back ----
-  linkDocumentCustomer: (docId, customerId) => supabaseClient.from("documents").update({ customer_id: customerId }).eq("id", docId),
+  linkDocumentCustomer: (docId, customerId) => usingPyBackendFor("documents")
+    ? db.pyFetch("PATCH", `/documents/${docId}/customer`, { customer_id: customerId })
+    : supabaseClient.from("documents").update({ customer_id: customerId }).eq("id", docId),
+  // ---- documents: toggling paid is a partial patch, not the full body a
+  // PUT/updateRow expects, so it gets its own endpoint on the Python side ----
+  setDocumentPaid: (id, paid) => usingPyBackendFor("documents")
+    ? db.pyFetch("PATCH", `/documents/${id}/paid`, { paid })
+    : supabaseClient.from("documents").update({ paid }).eq("id", id).select().single(),
 
   // ---- cash register ----
   upsertCashClosing: (row) => supabaseClient.from("cash_closings").upsert(row, { onConflict: "owner_id,date" }).select().single(),
@@ -2105,7 +2121,7 @@ async function deleteDocument(id) {
 
 async function togglePaid(id) {
   const d = state.documents.find(d => d.id === id);
-  const res = await db.updateRow("documents", id, { paid: !d.paid });
+  const res = await db.setDocumentPaid(id, !d.paid);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   d.paid = res.data.paid;
   cacheState(); flashSaved(true); render();
@@ -2861,13 +2877,13 @@ async function connectPyBackend() {
   pyBackend = { url: trimmedUrl, token: res.data.access_token };
   savePyConfig(pyBackend);
   alert(t("pyBackendConnected"));
-  await Promise.all([refetchTable("products"), refetchTable("customers")]);
+  await Promise.all([refetchTable("products"), refetchTable("customers"), refetchTable("documents")]);
   render();
 }
 async function disconnectPyBackend() {
   if (!confirm(t("pyBackendDisconnectConfirm"))) return;
   clearPyConfig();
-  await Promise.all([refetchTable("products"), refetchTable("customers")]);
+  await Promise.all([refetchTable("products"), refetchTable("customers"), refetchTable("documents")]);
   render();
 }
 
