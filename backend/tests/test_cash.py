@@ -1,15 +1,18 @@
-from datetime import date, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
 pytestmark = pytest.mark.asyncio
 
-# A date safely two days in the past, so it's unambiguously "before today"
-# in Europe/Sofia regardless of what time this test happens to run at (a
-# plain "yesterday" could still be "today" there for a couple of hours
-# around midnight UTC).
-PAST_DATE = (date.today() - timedelta(days=2)).isoformat()
-TODAY = date.today().isoformat()
+# "Today" per the same clock the backend itself uses for close-forgotten-days
+# (app/routers/cash_closings.py's SHOP_TIMEZONE) — not the test runner's own
+# system timezone, which disagrees with Europe/Sofia for a few hours around
+# midnight UTC and would otherwise make this test flake depending on when
+# it's run.
+_today_sofia = datetime.now(ZoneInfo("Europe/Sofia")).date()
+PAST_DATE = (_today_sofia - timedelta(days=2)).isoformat()
+TODAY = _today_sofia.isoformat()
 
 
 async def _signed_up_token(client, email: str) -> str:

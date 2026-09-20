@@ -36,7 +36,8 @@ class ShopSettings(Base):
     next_invoice_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     next_offer_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     next_credit_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    categories: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # Two shapes on purpose — see the comment on SettingsOut in schemas.py.
+    categories: Mapped[list | dict] = mapped_column(JSONB, nullable=False, default=list)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

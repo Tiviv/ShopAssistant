@@ -215,7 +215,11 @@ class SettingsOut(BaseModel):
     next_invoice_no: int
     next_offer_no: int
     next_credit_no: int
-    categories: list
+    # Two shapes on purpose: a plain array (legacy) or {custom, hidden} (since
+    # categories became renamable/hideable) — see the comment on catConfig()
+    # in index.html. Both are valid JSONB in this column; the frontend reads
+    # either.
+    categories: list | dict
 
     model_config = {"from_attributes": True}
 
@@ -233,7 +237,7 @@ class SettingsUpdate(BaseModel):
     address: str | None = None
     mol: str | None = None
     iban: str | None = None
-    categories: list | None = None
+    categories: list | dict | None = None
     next_invoice_no: int | None = None
     next_offer_no: int | None = None
     next_credit_no: int | None = None

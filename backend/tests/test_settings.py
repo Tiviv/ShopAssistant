@@ -47,6 +47,23 @@ async def test_settings_patch_only_touches_given_fields(client):
     assert body["company_name"] == "Свежо и Вкусно"  # still untouched
 
 
+async def test_settings_accepts_object_shaped_categories(client):
+    # The frontend's catConfig()/saveCategories() always send this shape
+    # once a category has been renamed or hidden, not a plain array — see
+    # the comment on SettingsOut in app/schemas.py. A plain-array-only
+    # schema rejects this with a 422 ("Input should be a valid list").
+    token = await _signed_up_token(client, "test-yara@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    cfg = {"custom": ["Мед"], "hidden": ["Сладки"]}
+    r = await client.patch("/settings", headers=headers, json={"categories": cfg})
+    assert r.status_code == 200
+    assert r.json()["categories"] == cfg
+
+    r = await client.get("/settings", headers=headers)
+    assert r.json()["categories"] == cfg
+
+
 async def test_settings_ensure_is_idempotent(client):
     token = await _signed_up_token(client, "test-walt@example.com")
     headers = {"Authorization": f"Bearer {token}"}
