@@ -1,6 +1,12 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
-sqlalchemy==2.0.36
+# The [asyncio] extra is what actually pulls in greenlet. Plain `sqlalchemy`
+# only auto-installs greenlet on platforms whose reported machine matches
+# its hardcoded list (x86_64/aarch64/...) — macOS on Apple Silicon reports
+# "arm64", which isn't on that list, so greenlet silently doesn't get
+# installed and the async engine fails at runtime with "the greenlet
+# library is required". The extra has no such platform gate.
+sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
 alembic==1.14.0
 pydantic==2.10.4
