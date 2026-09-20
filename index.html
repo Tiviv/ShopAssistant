@@ -360,7 +360,7 @@ const TRANSLATIONS = {
     categoryInUse: "„{name}“ се използва от {n}. Преместете ги в друга категория, преди да я изтриете.",
     usedByProducts: "{n} продукта", usedByProduct: "1 продукт", categoryNotUsed: "не се използва",
     pyBackendTitle: "Python бекенд (експериментално)",
-    pyBackendHint: "Отделна, незадължителна връзка към Python бекенда от docs/python-backend-plan.md. Докато е свързана, продуктите, клиентите, документите (фактури/оферти/кредитни известия — създаване, редакция, изтриване, номерация, движение на наличности) и касата (дневни обороти, ръчни продажби, затваряне на ден — включително автоматичното затваряне на забравени дни) се пазят там вместо в Supabase — останалите данни не се засягат. Живата синхронизация между устройства работи и тук — през отделна WebSocket връзка към Python бекенда. Внимание: докато е свързан, тези данни не участват в JSON резервно копие/възстановяване (по-късна фаза), а бройката „следващ номер“ в Настройки спира да се обновява, защото номерата вече идват от Python бекенда.",
+    pyBackendHint: "Отделна, незадължителна връзка към Python бекенда от docs/python-backend-plan.md. Докато е свързана, продуктите, клиентите, документите (фактури/оферти/кредитни известия — създаване, редакция, изтриване, номерация, движение на наличности) и касата (дневни обороти, ръчни продажби, затваряне на ден — включително автоматичното затваряне на забравени дни) се пазят там вместо в Supabase — останалите данни не се засягат. Живата синхронизация между устройства работи и тук — през отделна WebSocket връзка към Python бекенда. JSON резервното копие и възстановяването също работят с тези данни (справката за Excel винаги е работела, тъй като се чете от вече заредените данни). Внимание: докато е свързан, бройката „следващ номер“ в Настройки спира да се обновява, защото номерата вече идват от Python бекенда; и за разлика от Supabase, възстановяване/замяна тук не е една неделима стъпка — прекъсване на връзката по средата може да остави частично приложена промяна.",
     pyBackendConnect: "Свържи Python бекенд",
     pyBackendConnectedTo: "Свързан към {url} — продуктите, клиентите, документите и касата се пазят там.",
     pyBackendDisconnect: "Прекъсни връзката (данните се връщат в Supabase)",
@@ -565,7 +565,7 @@ const TRANSLATIONS = {
     categoryInUse: "\u201c{name}\u201d is used by {n}. Move them to another category before deleting it.",
     usedByProducts: "{n} products", usedByProduct: "1 product", categoryNotUsed: "not used",
     pyBackendTitle: "Python backend (experimental)",
-    pyBackendHint: "A separate, optional connection to the Python backend from docs/python-backend-plan.md. While connected, products, customers, documents (invoices/offers/credit notes — create, edit, delete, numbering, stock movement), and the cash register (daily takings, walk-in sales, day closing — including auto-closing forgotten days) are stored there instead of Supabase — nothing else is affected. Live multi-device sync works here too, over a separate WebSocket connection to the Python backend. Note: while connected, that data is left out of the JSON backup/restore (a later phase), and the “next number” shown in Settings stops updating, since numbers now come from the Python backend instead.",
+    pyBackendHint: "A separate, optional connection to the Python backend from docs/python-backend-plan.md. While connected, products, customers, documents (invoices/offers/credit notes — create, edit, delete, numbering, stock movement), and the cash register (daily takings, walk-in sales, day closing — including auto-closing forgotten days) are stored there instead of Supabase — nothing else is affected. Live multi-device sync works here too, over a separate WebSocket connection to the Python backend. JSON backup and restore work with this data too (the Excel report always has, since it reads from data already loaded). Note: while connected, the “next number” shown in Settings stops updating, since numbers now come from the Python backend instead; and unlike Supabase, restore/replace here isn't one indivisible step — a dropped connection partway through can leave it partially applied.",
     pyBackendConnect: "Connect Python backend",
     pyBackendConnectedTo: "Connected to {url} — products, customers, documents, and the cash register are stored there.",
     pyBackendDisconnect: "Disconnect (data goes back to Supabase)",
@@ -924,6 +924,36 @@ function usingPyBackendFor(table) {
   return ["products", "customers", "documents", "cash_entries", "cash_closings"].includes(table) && !!(pyBackend && pyBackend.token);
 }
 
+// ---- bulk import/restore against the Python backend ----
+// There's no bulk endpoint for any table (see docs/python-backend-plan.md's
+// Phase 7 notes) — building one, wrapped in a single DB transaction, would
+// be the natural next step if this ever needs to be atomic. For now these
+// just loop over the same single-row endpoints every other db.* function
+// already uses, which means a mid-import network failure can leave a
+// replace/restore partially applied rather than failing as one unit the
+// way the Supabase bulk call did. That's an acceptable trade for a rare,
+// user-initiated operation on a shop-sized dataset, not something to build
+// speculative transaction machinery for.
+async function pyBulkDelete(table) {
+  const list = await db.pyFetch("GET", `/${table}`);
+  if (list.error) return list;
+  for (const row of list.data) {
+    const key = table === "cash_closings" ? row.date : row.id;
+    const res = await db.pyFetch("DELETE", `/${table}/${key}`);
+    if (res.error) return res;
+  }
+  return { data: null, error: null };
+}
+async function pyBulkInsert(table, rows) {
+  for (const row of rows) {
+    const res = table === "cash_closings"
+      ? await db.pyFetch("PUT", `/cash_closings/${row.date}`, row)
+      : await db.pyFetch("POST", `/${table}`, row);
+    if (res.error) return res;
+  }
+  return { data: null, error: null };
+}
+
 const db = {
   auth: {
     getSession: () => supabaseClient.auth.getSession(),
@@ -970,7 +1000,9 @@ const db = {
   listCashEntries: (ownerId) => usingPyBackendFor("cash_entries")
     ? db.pyFetch("GET", "/cash_entries")
     : supabaseClient.from("cash_entries").select("*").eq("owner_id", ownerId).order("created_at"),
-  selectAll: (table, ownerId) => supabaseClient.from(table).select("*").eq("owner_id", ownerId),
+  selectAll: (table, ownerId) => usingPyBackendFor(table)
+    ? db.pyFetch("GET", `/${table}`)
+    : supabaseClient.from(table).select("*").eq("owner_id", ownerId),
 
   loadAll: (ownerId) => Promise.all([
     db.getSettings(ownerId), db.listProducts(ownerId), db.listCustomers(ownerId),
@@ -1036,8 +1068,12 @@ const db = {
     : supabaseClient.from("cash_closings").delete().eq("owner_id", ownerId).eq("date", date),
 
   // ---- bulk import/restore ----
-  deleteAllRows: (table, ownerId) => supabaseClient.from(table).delete().eq("owner_id", ownerId),
-  insertRows: (table, rows) => supabaseClient.from(table).insert(rows)
+  deleteAllRows: (table, ownerId) => usingPyBackendFor(table)
+    ? pyBulkDelete(table)
+    : supabaseClient.from(table).delete().eq("owner_id", ownerId),
+  insertRows: (table, rows) => usingPyBackendFor(table)
+    ? pyBulkInsert(table, rows)
+    : supabaseClient.from(table).insert(rows)
 };
 
 let sidebarOpen = false;

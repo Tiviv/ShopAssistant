@@ -40,17 +40,27 @@ Currently implemented:
   custom headers on a WebSocket handshake. In-process only: a
   multi-instance deployment would need a shared layer (Redis pub/sub or
   similar) instead — not built speculatively before it's ever needed.
+- **Phase 7 — backup/restore.** No new endpoints — JSON export and the
+  Excel report already worked, since both just read data the frontend
+  already has loaded. Only *import* needed anything, and since every table
+  already has single-row CRUD, the frontend's bulk import/replace just
+  loops those endpoints (`cash_closings` by date, everything else by id)
+  instead of calling a bulk one. That trades away the atomicity Supabase's
+  single bulk call gave: a network failure mid-import can leave a
+  replace/restore partially applied here. The UI says so.
 
 In `index.html`, connect via the "Python backend (experimental)" card on
 the Settings tab — it's a separate, optional connection from the Supabase
 one; while connected, product, customer, document, and cash-register
-writes go here instead of Supabase, and changes push live to every other
-open tab/device connected to the same account, nothing else changes. One
-thing worth knowing: once documents are backend-managed, Supabase's own
-invoice/offer/credit counters stop advancing, so the "next number" shown
-on the Settings tab goes stale until you disconnect — the UI says so.
+writes go here instead of Supabase, changes push live to every other open
+tab/device connected to the same account, and JSON backup/restore and the
+Excel report all work against this data too. One thing worth knowing: once
+documents are backend-managed, Supabase's own invoice/offer/credit
+counters stop advancing, so the "next number" shown on the Settings tab
+goes stale until you disconnect — the UI says so.
 
-Every phase from the original plan is done except backup/restore (7).
+Every phase from the original plan (`docs/python-backend-plan.md`) is
+done.
 
 ## One-time setup
 
