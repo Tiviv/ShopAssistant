@@ -113,6 +113,40 @@ what the file says, what the account already had, and the highest number
 actually imported — because rolling a counter back would eventually hand out an
 invoice number that already exists on paper.
 
+### Goods receipts and monthly invoicing
+
+A **стокова разписка** (goods receipt) is issued when goods are handed over
+without an invoice. Several of them for the same customer are later consolidated
+into one invoice — the pattern Микроинвест and similar Bulgarian packages use.
+
+Receipts carry **no VAT**: the printed sheet shows quantity, unit price and
+amount, and one total. VAT is added when the receipts are invoiced, so a receipt
+total of 17.45 becomes 19.20 + VAT on a consolidated invoice at 20%. They have
+their own numbering sequence, separate from invoices, quotes and credit notes.
+
+**Stock moves on the receipt, not on the invoice.** The goods physically leave
+the shop when the receipt is written, so that is when the shelves are
+decremented. The consolidating invoice deliberately does not touch stock —
+doing it at both ends would count every delivery twice. The same rule applies in
+reverse: deleting an uninvoiced receipt gives the stock back, while deleting a
+consolidated invoice does not, because that invoice never took any.
+
+**Фактурирай разписки** opens the consolidation screen: pick a customer, tick
+the receipts still waiting, and issue one invoice. Identical goods are merged
+into a single line — a month of daily banana deliveries at the same price
+becomes one row with the total quantity — while the same product at a different
+price stays its own line. The invoice prints the numbers and dates of the
+receipts it covers, so the customer can match it against the delivery notes they
+were handed.
+
+Once a receipt has been invoiced it is frozen: it cannot be edited or deleted on
+its own, and the list shows which invoice swallowed it. Deleting that invoice
+releases its receipts, which reappear as uninvoiced and can be consolidated
+again.
+
+Like invoices, receipts always print in Bulgarian, whatever language the
+interface is in.
+
 ### One-off buyers
 
 The customer picker on a document has a third choice besides "no registered

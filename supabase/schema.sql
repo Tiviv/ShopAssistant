@@ -22,6 +22,7 @@ create table if not exists public.settings (
   next_invoice_no int not null default 1,
   next_offer_no int not null default 1,
   next_credit_no int not null default 1,
+  next_receipt_no int not null default 1,
   updated_at timestamptz not null default now()
 );
 
@@ -51,7 +52,7 @@ create table if not exists public.customers (
 create table if not exists public.documents (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users(id) on delete cascade,
-  doc_type text not null check (doc_type in ('invoice', 'offer', 'credit')),
+  doc_type text not null check (doc_type in ('invoice', 'offer', 'credit', 'receipt')),
   number int not null,
   date date not null,
   customer_id uuid references public.customers(id) on delete set null,
@@ -73,6 +74,20 @@ create table if not exists public.documents (
 -- department lines on an invoice. Built-in categories are not stored here —
 -- only additions — so the defaults stay translatable.
 alter table public.settings add column if not exists categories jsonb not null default '[]'::jsonb;
+
+alter table public.settings add column if not exists next_receipt_no int not null default 1;
+
+-- A goods receipt ("стокова разписка") hands the goods over without an invoice;
+-- several of them are later consolidated into one. This records which invoice
+-- swallowed a given receipt, and is null while it is still waiting.
+alter table public.documents add column if not exists invoiced_in_id uuid references public.documents(id) on delete set null;
+create index if not exists documents_invoiced_in_idx on public.documents (owner_id, invoiced_in_id);
+
+-- The inline check above is only applied when the table is first created, so a
+-- database from before receipts existed needs the constraint replaced.
+alter table public.documents drop constraint if exists documents_doc_type_check;
+alter table public.documents add constraint documents_doc_type_check
+  check (doc_type in ('invoice', 'offer', 'credit', 'receipt'));
 
 -- "create table if not exists" above is a no-op if the table already exists
 -- (i.e. on a database that ran a previous version of this schema), so the
@@ -241,6 +256,10 @@ begin
     update settings set next_credit_no = next_credit_no + 1, updated_at = now()
       where owner_id = auth.uid()
       returning next_credit_no - 1 into v_number;
+  elsif p_doc_type = 'receipt' then
+    update settings set next_receipt_no = next_receipt_no + 1, updated_at = now()
+      where owner_id = auth.uid()
+      returning next_receipt_no - 1 into v_number;
   else
     raise exception 'unknown document type: %', p_doc_type;
   end if;

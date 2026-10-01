@@ -320,7 +320,24 @@ const TRANSLATIONS = {
     turnoverThisMonth: "Оборот този месец", invoicesThisMonth: "Фактури този месец", unpaidInvoices: "Неплатени фактури",
     recentDocuments: "Последни документи", noDocumentsYet: "Все още няма създадени документи.",
     offlineBanner: "Няма връзка с интернет — виждате последно синхронизираните данни. Редакциите са изключени, докато връзката се възстанови.",
-    docInvoice: "Фактура", docOffer: "Оферта", docCredit: "Кредитно",
+    docInvoice: "Фактура", docOffer: "Оферта", docCredit: "Кредитно", docReceipt: "Стокова разписка",
+    navReceipts: "Стокови разписки", newReceipt: "+ Нова разписка",
+    typeReceiptGen: "стокова разписка", nextReceiptNo: "Следващ номер на разписка",
+    printReceipt: "СТОКОВА РАЗПИСКА", issuer: "Издател", receiptTotal: "Общо",
+    colName: "Наименование", colQtyFull: "Количество", colUnitPriceEur: "Единична цена в Евро", colLineTotal: "Обща стойност",
+    receiptNoVatNote: "Сумите са без ДДС. То се начислява при фактурирането.",
+    receiptsHint: "Разписка се издава при предаване на стоката. В края на месеца няколко разписки за един клиент се обединяват в една фактура.",
+    notInvoiced: "Нефактурирана", invoicedIn: "Фактура № {n}",
+    consolidateBtn: "Фактурирай разписки", consolidateTitle: "Фактуриране на стокови разписки",
+    consolidateHelp: "Избери клиент и разписките, които да влязат в една фактура. Еднаквите стоки се сбират в общ ред.",
+    consolidatePick: "Клиент", consolidateNone: "Няма нефактурирани разписки за този клиент.",
+    consolidateSelectAll: "Избери всички", consolidateChosen: "Избрани {n} разписки на стойност {sum}",
+    consolidateNothing: "Изберете поне една разписка.",
+    consolidateConfirm: "Издаване на фактура за {n} разписки на стойност {sum} без ДДС?",
+    consolidatedAlert: "Издадена фактура № {n} от {c} разписки.",
+    includesReceipts: "По стокови разписки: {list}",
+    receiptInvoicedLocked: "Разписката вече е фактурирана. Отворете фактура № {n}, ако трябва промяна.",
+    deleteInvoicedReceipt: "Разписката е включена във фактура № {n} и не може да се изтрие сама.",
 
     newProduct: "+ Нов продукт", noProducts: "Няма добавени продукти.", noProductsMatch: "Няма продукти, отговарящи на търсенето.",
     searchProducts: "Търсене по име или категория…", deleteProductConfirm: "Изтриване на продукта?", productNamePlaceholder: "напр. Домати",
@@ -513,7 +530,24 @@ const TRANSLATIONS = {
     turnoverThisMonth: "Turnover this month", invoicesThisMonth: "Invoices this month", unpaidInvoices: "Unpaid invoices",
     recentDocuments: "Recent documents", noDocumentsYet: "No documents created yet.",
     offlineBanner: "No internet connection — you're seeing the last synced data. Editing is disabled until the connection is back.",
-    docInvoice: "Invoice", docOffer: "Quote", docCredit: "Credit note",
+    docInvoice: "Invoice", docOffer: "Quote", docCredit: "Credit note", docReceipt: "Goods receipt",
+    navReceipts: "Goods receipts", newReceipt: "+ New receipt",
+    typeReceiptGen: "goods receipt", nextReceiptNo: "Next receipt number",
+    printReceipt: "GOODS RECEIPT", issuer: "Issued by", receiptTotal: "Total",
+    colName: "Description", colQtyFull: "Quantity", colUnitPriceEur: "Unit price in EUR", colLineTotal: "Amount",
+    receiptNoVatNote: "Amounts exclude VAT, which is added when the receipts are invoiced.",
+    receiptsHint: "A receipt is issued when the goods are handed over. At the end of the month several receipts for one customer are consolidated into a single invoice.",
+    notInvoiced: "Not invoiced", invoicedIn: "Invoice No. {n}",
+    consolidateBtn: "Invoice receipts", consolidateTitle: "Consolidate goods receipts",
+    consolidateHelp: "Pick a customer and the receipts to put on one invoice. Identical goods are merged into a single line.",
+    consolidatePick: "Customer", consolidateNone: "No uninvoiced receipts for this customer.",
+    consolidateSelectAll: "Select all", consolidateChosen: "{n} receipts selected, worth {sum}",
+    consolidateNothing: "Select at least one receipt.",
+    consolidateConfirm: "Issue an invoice for {n} receipts worth {sum} before VAT?",
+    consolidatedAlert: "Issued invoice No. {n} from {c} receipts.",
+    includesReceipts: "Covers goods receipts: {list}",
+    receiptInvoicedLocked: "This receipt has already been invoiced. Open invoice No. {n} if it needs changing.",
+    deleteInvoicedReceipt: "This receipt is part of invoice No. {n} and cannot be deleted on its own.",
 
     newProduct: "+ New product", noProducts: "No products added.", noProductsMatch: "No products match your search.",
     searchProducts: "Search by name or category…", deleteProductConfirm: "Delete this product?", productNamePlaceholder: "e.g. Tomatoes",
@@ -746,7 +780,7 @@ function fieldError(errs, key) { return errs[key] ? `<div class="field-error">${
 
 function defaultState() {
   return {
-    settings: { companyName: "", eik: "", vatNumber: "", address: "", mol: "", iban: "", nextInvoiceNo: 1, nextOfferNo: 1, nextCreditNo: 1, categories: [] },
+    settings: { companyName: "", eik: "", vatNumber: "", address: "", mol: "", iban: "", nextInvoiceNo: 1, nextOfferNo: 1, nextCreditNo: 1, nextReceiptNo: 1, categories: [] },
     products: [],
     customers: [],
     documents: [],
@@ -764,6 +798,7 @@ function settingsRowToObj(row) {
     companyName: row.company_name || "", eik: row.eik || "", vatNumber: row.vat_number || "",
     address: row.address || "", mol: row.mol || "", iban: row.iban || "",
     nextInvoiceNo: row.next_invoice_no, nextOfferNo: row.next_offer_no, nextCreditNo: row.next_credit_no,
+    nextReceiptNo: row.next_receipt_no,
     categories: row.categories == null ? [] : row.categories
   };
 }
@@ -785,7 +820,8 @@ function docRowToObj(row) {
     customerId: row.customer_id, customerName: row.customer_name, customerSnapshot: row.customer_snapshot,
     items: row.items || [], vatRate: Number(row.vat_rate), subtotal: Number(row.subtotal), vatAmount: Number(row.vat_amount),
     total: Number(row.total), paid: row.paid, relatedInvoiceNumber: row.related_invoice_number,
-    convertedFromOfferId: row.converted_from_offer_id, paymentMethod: row.payment_method || "cash", createdAt: row.created_at
+    convertedFromOfferId: row.converted_from_offer_id, invoicedInId: row.invoiced_in_id,
+    paymentMethod: row.payment_method || "cash", createdAt: row.created_at
   };
 }
 function cashClosingRowToObj(row) {
@@ -1219,7 +1255,7 @@ function renderNewPassword() {
 // =========================================================================
 function setTab(tab) {
   currentTab = tab;
-  editingProduct = null; editingCustomer = null; docForm = null; printingDocId = null;
+  editingProduct = null; editingCustomer = null; docForm = null; printingDocId = null; consolidateForm = null;
   productErrors = {}; customerErrors = {}; settingsErrors = {};
   settingsForm = null; settingsEditing = false; settingsSavedAt = null;
   viewingCustomerId = null; cashForm = null; cashEntryForm = null;
@@ -1280,6 +1316,7 @@ function render() {
   else if (currentTab === "products") content.innerHTML = renderProducts();
   else if (currentTab === "customers") content.innerHTML = renderCustomers();
   else if (currentTab === "invoices") content.innerHTML = renderDocuments("invoice", t("navInvoices"));
+  else if (currentTab === "receipts") content.innerHTML = renderDocuments("receipt", t("navReceipts"));
   else if (currentTab === "offers") content.innerHTML = renderDocuments("offer", t("navOffers"));
   else if (currentTab === "cash") content.innerHTML = renderCash();
   else if (currentTab === "reports") content.innerHTML = renderReports();
@@ -1290,7 +1327,8 @@ function render() {
 function renderSidebar() {
   const items = [
     ["dashboard", t("navDashboard")], ["products", t("navProducts")], ["customers", t("navCustomers")],
-    ["invoices", t("navInvoices")], ["offers", t("navOffers")], ["cash", t("navCash")], ["reports", t("navReports")],
+    ["invoices", t("navInvoices")], ["receipts", t("navReceipts")], ["offers", t("navOffers")],
+    ["cash", t("navCash")], ["reports", t("navReports")],
     ["settings", t("navSettings")], ["backup", t("navBackup")]
   ];
   const statusClass = offline ? "offline" : (syncStatus === "syncing" ? "syncing" : "online");
@@ -1328,7 +1366,7 @@ function renderDashboard() {
     ${recent.length === 0 ? `<p class="muted">${t("noDocumentsYet")}</p>` : `
       <div class="table-scroll">
       <table class="data"><tbody>
-        ${recent.map(d => `<tr><td>${d.docType === "invoice" ? t("docInvoice") : d.docType === "offer" ? t("docOffer") : t("docCredit")} ${t("numberShort")} ${d.number} — ${esc(d.customerName || "—")}</td><td style="text-align:right">${money(d.total)}</td></tr>`).join("")}
+        ${recent.map(d => `<tr><td>${docTypeLabel(d.docType)} ${t("numberShort")} ${d.number} — ${esc(d.customerName || "—")}</td><td style="text-align:right">${money(d.total)}</td></tr>`).join("")}
       </tbody></table>
       </div>
     `}
@@ -1624,7 +1662,8 @@ function emptyLineItem() { return { id: uid(), productId: "", category: "", name
 
 function newDoc(docType) {
   docForm = { docType, date: todayStr(), customerId: "", customerName: "", manual: false,
-    manualCustomer: emptyManualCustomer(), items: [emptyLineItem()], vatRate: 20, paid: false, paymentMethod: "cash" };
+    manualCustomer: emptyManualCustomer(), items: [emptyLineItem()],
+    vatRate: docType === "receipt" ? 0 : 20, paid: false, paymentMethod: "cash" };
   docErrors = {};
   creditForm = null; creditFormError = "";
   render();
@@ -1635,6 +1674,11 @@ function editDoc(id) {
   const d = state.documents.find(x => x.id === id);
   if (!d) return;
   if (d.docType === "credit") { alert(t("creditNotEditable")); return; }
+  if (d.docType === "receipt" && d.invoicedInId) {
+    const inv = state.documents.find(x => x.id === d.invoicedInId);
+    alert(t("receiptInvoicedLocked", { n: inv ? inv.number : "?" }));
+    return;
+  }
   if (d.docType === "invoice") {
     const credits = state.documents.filter(x => x.docType === "credit" && x.relatedInvoiceNumber === d.number);
     if (credits.length && !confirm(t("editWithCreditWarn", { n: d.number }))) return;
@@ -1725,15 +1769,27 @@ function computeDocTotals() {
   const vatAmount = subtotal * (docForm.vatRate / 100);
   return { subtotal, vatAmount, total: subtotal + vatAmount };
 }
-function renderDocFormTotalsOnly() {
-  const tot = computeDocTotals();
-  const el = document.getElementById("doc-totals");
-  if (el) el.innerHTML = `
+function renderDocTotalsInner(tot) {
+  // A receipt carries no VAT, so showing a 0% line and an identical "total"
+  // three times would be noise rather than information.
+  if (docForm.docType === "receipt") return `<div style="font-weight:600;">${t("receiptTotal")}: ${money(tot.subtotal)}</div>`;
+  return `
     <div>${t("taxBase")}: ${money(tot.subtotal)}</div>
     <div>${t("vatLabel")} (${docForm.vatRate}%): ${money(tot.vatAmount)}</div>
     <div style="font-weight:600;">${t("total")}: ${money(tot.total)}</div>
   `;
 }
+function renderDocFormTotalsOnly() {
+  const el = document.getElementById("doc-totals");
+  if (el) el.innerHTML = renderDocTotalsInner(computeDocTotals());
+}
+
+// Goods physically leave on a receipt as surely as on an invoice, so both move
+// stock. The invoice that later consolidates receipts must not move it again —
+// see consolidateReceipts, which is why this is a named rule rather than a
+// comparison repeated at each call site.
+function movesStock(docType) { return docType === "invoice" || docType === "receipt"; }
+function receiptsOf(invoiceId) { return state.documents.filter(d => d.docType === "receipt" && d.invoicedInId === invoiceId); }
 
 async function applyStockAdjustments(items) {
   for (const it of items) {
@@ -1775,7 +1831,7 @@ async function saveDoc() {
     // Snapshot the pre-edit lines before state is replaced — stock has to be
     // rewound by exactly what the old version took before the new one applies.
     const originalItems = original ? original.items.map(it => ({ ...it })) : [];
-    const wasInvoice = original && original.docType === "invoice";
+    const wasInvoice = original && movesStock(original.docType);
     const res = await supabaseClient.from("documents").update(fields).eq("id", docForm.editingId).select().single();
     if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
     const updated = docRowToObj(res.data);
@@ -1801,7 +1857,7 @@ async function saveDoc() {
   docForm = null;
   cacheState(); flashSaved(true); render();
 
-  if (row.doc_type === "invoice") await applyStockAdjustments(row.items);
+  if (movesStock(row.doc_type)) await applyStockAdjustments(row.items);
   await refetchTable("settings");
 }
 
@@ -1835,6 +1891,150 @@ async function ensureCustomerForOffer(offerDoc) {
   if (idx >= 0) state.documents[idx] = { ...state.documents[idx], customerId: res.data.id };
   alert(t("customerSavedAlert", { name }));
   return res.data.id;
+}
+
+// ---------- consolidating goods receipts into one invoice ----------
+// The Микроинвест flow: choose a customer, tick the receipts still waiting, and
+// issue one invoice covering them. Identical goods are merged so a month of
+// daily banana deliveries is one line, not thirty.
+let consolidateForm = null;
+function uninvoicedReceipts(customerKeyStr) {
+  return state.documents.filter(d => d.docType === "receipt" && !d.invoicedInId
+    && receiptCustomerKey(d) === customerKeyStr);
+}
+// Receipts are grouped by whoever they were made out to — a registered customer
+// by id, a one-off buyer by the name typed on the document.
+function receiptCustomerKey(d) {
+  return d.customerId ? "c:" + d.customerId : "n:" + normStr(d.customerName).toLowerCase();
+}
+function receiptCustomerLabel(d) {
+  return normStr(d.customerName) || t("noRegisteredCustomer");
+}
+function beginConsolidate() {
+  const groups = new Map();
+  state.documents.filter(d => d.docType === "receipt" && !d.invoicedInId).forEach(d => {
+    const k = receiptCustomerKey(d);
+    if (!groups.has(k)) groups.set(k, { key: k, label: receiptCustomerLabel(d), docs: [] });
+    groups.get(k).docs.push(d);
+  });
+  const list = [...groups.values()].sort((a, b) => a.label.localeCompare(b.label, "bg"));
+  consolidateForm = { groups: list, key: list.length ? list[0].key : "", chosen: new Set(), vatRate: 20 };
+  if (list.length) list[0].docs.forEach(d => consolidateForm.chosen.add(d.id));
+  docForm = null; printingDocId = null;
+  render();
+}
+function cancelConsolidate() { consolidateForm = null; render(); }
+function setConsolidateCustomer(key) {
+  consolidateForm.key = key;
+  consolidateForm.chosen = new Set(uninvoicedReceipts(key).map(d => d.id));
+  render();
+}
+function toggleConsolidateDoc(id) {
+  const c = consolidateForm.chosen;
+  c.has(id) ? c.delete(id) : c.add(id);
+  render();
+}
+function toggleConsolidateAll() {
+  const all = uninvoicedReceipts(consolidateForm.key);
+  consolidateForm.chosen = consolidateForm.chosen.size === all.length ? new Set() : new Set(all.map(d => d.id));
+  render();
+}
+function chosenReceipts() {
+  return uninvoicedReceipts(consolidateForm.key).filter(d => consolidateForm.chosen.has(d.id));
+}
+// Lines are merged on everything a person could tell apart on the printed sheet,
+// so the same banana at a different price stays a separate row.
+function mergeReceiptItems(docs) {
+  const byKey = new Map();
+  docs.forEach(d => (d.items || []).filter(it => it.name).forEach(it => {
+    const k = [normStr(it.category), normStr(it.name), normStr(it.unit), normNum(it.price), !!it.amountMode].join("\u0001");
+    if (!byKey.has(k)) byKey.set(k, { ...it, id: uid(), qty: 0 });
+    byKey.get(k).qty = (Number(byKey.get(k).qty) || 0) + (Number(it.qty) || 0);
+  }));
+  return [...byKey.values()];
+}
+function renderConsolidateForm() {
+  const groups = consolidateForm.groups;
+  const docs = uninvoicedReceipts(consolidateForm.key);
+  const chosen = chosenReceipts();
+  const sum = chosen.reduce((a, d) => a + Number(d.subtotal || 0), 0);
+  return `
+    <div class="card">
+      <h3 style="margin-top:0;">${t("consolidateTitle")}</h3>
+      <p class="muted" style="font-size:13px;">${t("consolidateHelp")}</p>
+      <div class="grid" style="grid-template-columns: 2fr 1fr; margin-bottom:6px;">
+        <div class="field-wrap"><label class="field">${t("consolidatePick")}</label>
+          <select onchange="setConsolidateCustomer(this.value)">
+            ${groups.map(g => `<option value="${esc(g.key)}" ${consolidateForm.key === g.key ? "selected" : ""}>${esc(g.label)} (${g.docs.length})</option>`).join("")}
+          </select>
+        </div>
+        <div class="field-wrap"><label class="field">${t("vatRate")}</label>
+          <select onchange="consolidateForm.vatRate = Number(this.value); render();">
+            ${VAT_RATES.map(r => `<option value="${r}" ${consolidateForm.vatRate === r ? "selected" : ""}>${r}%</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      ${docs.length === 0 ? `<p class="muted">${t("consolidateNone")}</p>` : `
+        <button style="margin-bottom:8px;" onclick="toggleConsolidateAll()">${t("consolidateSelectAll")}</button>
+        ${docs.map(d => `
+          <div class="cat-row">
+            <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+              <input type="checkbox" ${consolidateForm.chosen.has(d.id) ? "checked" : ""} onchange="toggleConsolidateDoc('${d.id}')">
+              <span style="white-space:nowrap;">${t("numberShort")} ${d.number} — ${d.date}</span>
+            </label>
+            <span>${money(d.subtotal)}</span>
+          </div>`).join("")}
+        <div style="text-align:right; margin:10px 0;">
+          <div class="muted">${t("consolidateChosen", { n: chosen.length, sum: money(sum) })}</div>
+          <div>${t("taxBase")}: ${money(sum)}</div>
+          <div>${t("vatLabel")} (${consolidateForm.vatRate}%): ${money(sum * consolidateForm.vatRate / 100)}</div>
+          <div style="font-weight:600;">${t("total")}: ${money(sum * (1 + consolidateForm.vatRate / 100))}</div>
+        </div>
+        <div class="savebar">
+          <button class="primary" ${offline ? "disabled" : ""} onclick="consolidateReceipts()">${t("consolidateBtn")}</button>
+          <button onclick="cancelConsolidate()">${t("cancel")}</button>
+        </div>`}
+    </div>
+  `;
+}
+async function consolidateReceipts() {
+  const chosen = chosenReceipts();
+  if (!chosen.length) { alert(t("consolidateNothing")); return; }
+  const subtotal = chosen.reduce((a, d) => a + Number(d.subtotal || 0), 0);
+  const rate = consolidateForm.vatRate;
+  if (!confirm(t("consolidateConfirm", { n: chosen.length, sum: money(subtotal) }))) return;
+
+  const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: "invoice" });
+  if (numErr) { flashSaved(false, t("errorPrefix") + numErr.message); return; }
+  const first = chosen[0];
+  const vatAmount = subtotal * rate / 100;
+  const row = {
+    owner_id: session.user.id, doc_type: "invoice", number, date: todayStr(),
+    customer_id: first.customerId || null, customer_name: first.customerName || "",
+    customer_snapshot: first.customerSnapshot || null,
+    items: mergeReceiptItems(chosen), vat_rate: rate,
+    subtotal, vat_amount: vatAmount, total: subtotal + vatAmount,
+    paid: false, payment_method: "bank"
+  };
+  const res = await supabaseClient.from("documents").insert(row).select().single();
+  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
+  const invoice = docRowToObj(res.data);
+  state.documents.push(invoice);
+
+  const upd = await supabaseClient.from("documents").update({ invoiced_in_id: invoice.id })
+    .in("id", chosen.map(d => d.id));
+  if (upd.error) { flashSaved(false, t("errorPrefix") + upd.error.message); return; }
+  chosen.forEach(d => {
+    const i = state.documents.findIndex(x => x.id === d.id);
+    if (i >= 0) state.documents[i] = { ...state.documents[i], invoicedInId: invoice.id };
+  });
+
+  consolidateForm = null;
+  cacheState(); flashSaved(true); render();
+  // No stock adjustment on purpose: each receipt already took the goods out when
+  // they were handed over. Doing it again here would double-count every line.
+  await refetchTable("settings");
+  alert(t("consolidatedAlert", { n: number, c: chosen.length }));
 }
 
 async function convertToInvoice(id) {
@@ -1937,14 +2137,28 @@ async function saveCreditNote() {
 async function deleteDocument(id) {
   const d = state.documents.find(x => x.id === id);
   if (!d) return;
-  const typeLabel = d.docType === "invoice" ? t("typeInvoiceGen") : d.docType === "offer" ? t("typeOfferGen") : t("typeCreditGen");
-  const stockNote = d.docType !== "offer" ? t("stockWillRevert") : "";
+  if (d.docType === "receipt" && d.invoicedInId) {
+    const inv = state.documents.find(x => x.id === d.invoicedInId);
+    alert(t("deleteInvoicedReceipt", { n: inv ? inv.number : "?" }));
+    return;
+  }
+  const typeLabel = d.docType === "invoice" ? t("typeInvoiceGen") : d.docType === "offer" ? t("typeOfferGen")
+    : d.docType === "receipt" ? t("typeReceiptGen") : t("typeCreditGen");
+  // An invoice built from receipts never took the stock — the receipts did — so
+  // deleting it must not hand any back, or every consolidation would inflate the
+  // shelves. The receipts simply become uninvoiced again.
+  const covered = d.docType === "invoice" ? receiptsOf(d.id) : [];
+  const touchedStock = d.docType !== "offer" && covered.length === 0;
+  const stockNote = touchedStock ? t("stockWillRevert") : "";
   if (!confirm(t("deleteDocConfirm", { type: typeLabel, n: d.number, sum: money(d.total), stock: stockNote }))) return;
   const res = await supabaseClient.from("documents").delete().eq("id", id);
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
   state.documents = state.documents.filter(x => x.id !== id);
+  // The database clears the link itself (on delete set null); mirror it here so
+  // the freed receipts reappear in the consolidation list without a reload.
+  covered.forEach(r => { const i = state.documents.findIndex(x => x.id === r.id); if (i >= 0) state.documents[i] = { ...state.documents[i], invoicedInId: null }; });
   cacheState(); flashSaved(true); render();
-  if (d.docType !== "offer") {
+  if (touchedStock) {
     const reversedItems = d.items.map(it => ({ ...it, qty: -Number(it.qty) }));
     await applyStockAdjustments(reversedItems);
   }
@@ -2093,7 +2307,8 @@ function buildWorkbook(sheets) {
 }
 
 function docTypeLabel(kind) {
-  return kind === "invoice" ? t("docInvoice") : kind === "offer" ? t("docOffer") : t("docCredit");
+  return kind === "invoice" ? t("docInvoice") : kind === "offer" ? t("docOffer")
+    : kind === "receipt" ? t("docReceipt") : t("docCredit");
 }
 function exportExcel() {
   const yes = lang === "en" ? "yes" : "да", no = lang === "en" ? "no" : "не";
@@ -2166,11 +2381,15 @@ function renderDocuments(docType, title) {
       <h2>${title}</h2>
       <div style="display:flex; gap:8px;">
         <button onclick="exportDocsCSV('${docType}')">${t("excelCsv")}</button>
-        <button class="primary" ${offline ? "disabled" : ""} onclick="newDoc('${docType}')">${docType === "invoice" ? t("newInvoice") : t("newOffer")}</button>
+        ${docType === "receipt" ? `<button ${offline ? "disabled" : ""} onclick="beginConsolidate()">${t("consolidateBtn")}</button>` : ""}
+        <button class="primary" ${offline ? "disabled" : ""} onclick="newDoc('${docType}')">${
+          docType === "invoice" ? t("newInvoice") : docType === "receipt" ? t("newReceipt") : t("newOffer")}</button>
       </div>
     </div>
+    ${docType === "receipt" ? `<p class="muted" style="margin-top:0;">${t("receiptsHint")}</p>` : ""}
     ${formHtml}
     ${creditFormHtml}
+    ${docType === "receipt" && consolidateForm ? renderConsolidateForm() : ""}
     ${renderSearchBox("doc", docSearch, t("searchDocs"), list.length, all.length)}
     <div class="table-scroll">
     <table class="data mobile-cards">
@@ -2188,14 +2407,19 @@ function renderDocuments(docType, title) {
             <td data-label="${t("status")}">${
               isCredit ? `<span class="muted">${t("towardsNo", { n: d.relatedInvoiceNumber })}</span>`
               : docType === "invoice" ? `<button class="pill ${d.paid ? "paid" : "unpaid"}" ${offline ? "disabled" : ""} onclick="togglePaid('${d.id}')">${d.paid ? t("paidPill") : t("waitingPill")}</button>`
+              : docType === "receipt" ? (() => {
+                  const inv = d.invoicedInId ? state.documents.find(x => x.id === d.invoicedInId) : null;
+                  return inv ? `<span class="muted">${t("invoicedIn", { n: inv.number })}</span>`
+                             : `<span class="pill unpaid">${t("notInvoiced")}</span>`;
+                })()
               : "—"
             }</td>
             <td class="actions-cell">
               <button onclick="viewDoc('${d.id}')">${t("viewPrint")}</button>
-              ${!isCredit ? `<button ${offline ? "disabled" : ""} onclick="editDoc('${d.id}')">${t("edit")}</button>` : ""}
+              ${!isCredit && !(d.docType === "receipt" && d.invoicedInId) ? `<button ${offline ? "disabled" : ""} onclick="editDoc('${d.id}')">${t("edit")}</button>` : ""}
               ${docType === "offer" ? `<button ${offline ? "disabled" : ""} onclick="convertToInvoice('${d.id}')">${t("toInvoice")}</button>` : ""}
               ${docType === "invoice" && !isCredit ? `<button ${offline ? "disabled" : ""} onclick="beginCreditNote('${d.id}')">${t("creditNoteBtn")}</button>` : ""}
-              <button class="danger" ${offline ? "disabled" : ""} onclick="deleteDocument('${d.id}')">${t("del")}</button>
+              ${d.docType === "receipt" && d.invoicedInId ? "" : `<button class="danger" ${offline ? "disabled" : ""} onclick="deleteDocument('${d.id}')">${t("del")}</button>`}
             </td>
           </tr>
         `; }).join("")}
@@ -2207,7 +2431,9 @@ function renderDocuments(docType, title) {
 
 function renderDocForm() {
   const tot = computeDocTotals();
-  const typeLabel = docForm.docType === "invoice" ? t("typeInvoice") : t("typeOffer");
+  const isReceipt = docForm.docType === "receipt";
+  const typeLabel = docForm.docType === "invoice" ? t("typeInvoice")
+    : isReceipt ? t("typeReceiptGen") : t("typeOffer");
   return `
     <div class="card">
       ${docForm.editingId ? `<h3 style="margin-top:0;">${t("editDocTitle", { type: typeLabel, n: docForm.number })}</h3><p class="muted" style="font-size:13px;">${t("editDocHelp")}</p>` : ""}
@@ -2220,11 +2446,11 @@ function renderDocForm() {
             <option value="__manual__" ${docForm.manual ? "selected" : ""}>${t("manualCustomer")}</option>
           </select>
         </div>
-        <div class="field-wrap"><label class="field">${t("vatRate")}</label>
+        ${isReceipt ? "" : `<div class="field-wrap"><label class="field">${t("vatRate")}</label>
           <select onchange="updateDocField('vatRate', this.value)">
             ${VAT_RATES.map(r => `<option value="${r}" ${docForm.vatRate === r ? "selected" : ""}>${r}%</option>`).join("")}
           </select>
-        </div>
+        </div>`}
         ${docForm.docType === "invoice" ? `
           <div class="field-wrap"><label class="field">${t("paymentMethod")}</label>
             <select onchange="updateDocField('paymentMethod', this.value)">
@@ -2233,6 +2459,7 @@ function renderDocForm() {
           </div>
         ` : ""}
       </div>
+      ${isReceipt ? `<p class="muted" style="font-size:12px; margin:0 0 8px;">${t("receiptNoVatNote")}</p>` : ""}
       ${docForm.manual ? `
         <p class="muted" style="font-size:12px; margin:0 0 8px;">${t("manualCustomerHint")}</p>
         <div class="grid" style="grid-template-columns: 2fr 1fr 1fr 2fr; margin-bottom:6px;">
@@ -2276,11 +2503,7 @@ function renderDocForm() {
         </div>
       `;}).join("")}
       <button onclick="addDocItem()" style="margin: 6px 0 12px;">${t("addRow")}</button>
-      <div id="doc-totals" style="text-align:right; margin-bottom: 10px;">
-        <div>${t("taxBase")}: ${money(tot.subtotal)}</div>
-        <div>${t("vatLabel")} (${docForm.vatRate}%): ${money(tot.vatAmount)}</div>
-        <div style="font-weight:600;">${t("total")}: ${money(tot.total)}</div>
-      </div>
+      <div id="doc-totals" style="text-align:right; margin-bottom: 10px;">${renderDocTotalsInner(tot)}</div>
       <div class="savebar"><button class="primary" onclick="saveDoc()">${docForm.editingId ? t("saveChanges") : t("save")}</button><button onclick="cancelDocForm()">${t("cancel")}</button></div>
     </div>
   `;
@@ -2320,12 +2543,84 @@ function renderCreditForm() {
   `;
 }
 
+// A goods receipt follows the shop's existing paper form rather than the invoice
+// layout: recipient on the left, issuer on the right, no VAT block, and a single
+// total. Receipts are internal to Bulgarian trade, so they always print in
+// Bulgarian for the same reason invoices do.
+function renderPrintableReceipt(doc) {
+  const dl = "bg";
+  const T = (k, params) => tIn(dl, k, params);
+  const m = v => moneyIn(dl, v);
+  const cust = doc.customerSnapshot;
+  const st = state.settings;
+  const invoiced = doc.invoicedInId ? state.documents.find(x => x.id === doc.invoicedInId) : null;
+  return `
+    <div class="no-print" style="margin-bottom:1rem; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <button onclick="backFromPrint()">${t("back")}</button>
+      <button class="primary" onclick="window.print()">${t("printPdf")}</button>
+      ${invoiced ? `<span class="muted" style="font-size:12px;">${t("invoicedIn", { n: invoiced.number })}</span>` : ""}
+    </div>
+    <div class="print-sheet" lang="bg">
+      <div style="text-align:center; font-weight:600; font-size:17px; margin-bottom:0.3rem;">${T("printReceipt")}</div>
+      <div style="text-align:center; font-size:13px; margin-bottom:1.8rem;">${T("numberShort")} ${String(doc.number).padStart(6, "0")}</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:2rem; font-size:13px;">
+        <div>
+          <div style="font-weight:600; margin-bottom:4px;">${T("recipient")}:</div>
+          <div>${esc(doc.customerName) || "—"}</div>
+          ${cust && cust.eik ? `<div>${T("eik")}: ${esc(cust.eik)}</div>` : ""}
+          ${cust && cust.vatNumber ? `<div>${T("vatNumber")}: ${esc(cust.vatNumber)}</div>` : ""}
+          ${cust && cust.address ? `<div>${esc(cust.address)}</div>` : ""}
+        </div>
+        <div>
+          <div style="font-weight:600; margin-bottom:4px;">${T("issuer")}:</div>
+          <div>${esc(st.companyName) || "—"}</div>
+          <div>${T("eik")}: ${esc(st.eik) || "—"}</div>
+          ${st.vatNumber ? `<div>${T("vatNumber")}: ${esc(st.vatNumber)}</div>` : ""}
+          ${st.address ? `<div>${esc(st.address)}</div>` : ""}
+        </div>
+      </div>
+      <table style="border-collapse:collapse; width:100%;">
+        <thead>
+          <tr>
+            <th style="border:1px solid #333; padding:6px; text-align:left;">${T("colName")}</th>
+            <th style="border:1px solid #333; padding:6px;">${T("unit")}</th>
+            <th style="border:1px solid #333; padding:6px;">${T("colQtyFull")}</th>
+            <th style="border:1px solid #333; padding:6px;">${T("colUnitPriceEur")}</th>
+            <th style="border:1px solid #333; padding:6px;">${T("colLineTotal")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${doc.items.filter(it => it.name).map(it => `
+            <tr>
+              <td style="border:1px solid #333; padding:6px; text-align:left;">${esc(it.category ? categoryLabelIn(dl, it.category) : it.name)}</td>
+              <td style="border:1px solid #333; padding:6px; text-align:center;">${it.amountMode ? "" : esc(unitLabelIn(dl, it.unit))}</td>
+              <td style="border:1px solid #333; padding:6px; text-align:right;">${it.amountMode ? "" : it.qty}</td>
+              <td style="border:1px solid #333; padding:6px; text-align:right;">${it.amountMode ? "" : m(it.price)}</td>
+              <td style="border:1px solid #333; padding:6px; text-align:right;">${m((Number(it.qty) || 0) * (Number(it.price) || 0))}</td>
+            </tr>
+          `).join("")}
+          <tr>
+            <td colspan="4" style="border:none;"></td>
+            <td style="border:1px solid #333; padding:6px; text-align:right; font-weight:600;">${m(doc.subtotal)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="font-size:13px; margin-top:2rem;">${T("dateColon", { d: doc.date })}</div>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:#555; margin-top:3rem;">
+        <div>${T("preparedBy")}: _______________</div>
+        <div>${T("receivedBy")}: _______________</div>
+      </div>
+    </div>
+  `;
+}
+
 function renderPrintable(doc) {
   // Everything inside .print-sheet renders in the document's own language
   // (see printLangFor); the toolbar above it stays in the interface language.
   const dl = printLangFor(doc);
   const T = (k, params) => tIn(dl, k, params);
   const m = v => moneyIn(dl, v);
+  if (doc.docType === "receipt") return renderPrintableReceipt(doc);
   const typeLabel = doc.docType === "invoice" ? T("printInvoice") : doc.docType === "offer" ? T("printOffer") : T("printCredit");
   const cust = doc.customerSnapshot;
   const s = state.settings;
@@ -2383,6 +2678,15 @@ function renderPrintable(doc) {
           `).join("")}
         </tbody>
       </table>
+      ${(() => {
+        // An invoice built from receipts says which ones, so the customer can
+        // match it against the delivery notes they were handed.
+        const covered = doc.docType === "invoice" ? receiptsOf(doc.id) : [];
+        if (!covered.length) return "";
+        const list = covered.slice().sort((a, b) => a.number - b.number)
+          .map(r => T("numberShort") + " " + r.number + " / " + r.date).join(", ");
+        return `<div style="font-size:12px; margin-top:0.5rem;">${T("includesReceipts", { list: esc(list) })}</div>`;
+      })()}
       <div style="text-align:right; font-size:13px; margin: 1rem 0 2rem;">
         ${doc.docType === "invoice" ? `<div>${T("paymentMethodColon", { m: paymentLabelIn(dl, doc.paymentMethod) })}</div>` : ""}
         <div>${T("taxBase")}: ${m(doc.subtotal)}</div>
@@ -2660,6 +2964,7 @@ function renderSettings() {
         ${field(t("address"), "address")}
         ${field("IBAN", "iban", "BG00XXXX00000000000000")}
         <div class="field-wrap"><label class="field">${t("nextInvoiceNo")}</label><input value="${s.nextInvoiceNo}" disabled title="${t("autoNumberHint")}"></div>
+        <div class="field-wrap"><label class="field">${t("nextReceiptNo")}</label><input value="${esc(state.settings.nextReceiptNo)}" disabled></div>
         <div class="field-wrap"><label class="field">${t("nextOfferNo")}</label><input value="${s.nextOfferNo}" disabled></div>
       </div>
       ${editing
