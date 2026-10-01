@@ -139,6 +139,33 @@ create index if not exists customers_owner_idx on public.customers (owner_id);
 create index if not exists cash_entries_owner_date_idx on public.cash_entries (owner_id, date);
 
 -- ---------------------------------------------------------------------
+-- 1b. Data API grants
+-- ---------------------------------------------------------------------
+-- From 30 October 2026 Supabase no longer grants Data API access to new tables
+-- in "public" automatically, so every table has to say so itself. Without this
+-- a freshly created project runs this file, gets its tables, and then answers
+-- every request with "permission denied" — nothing in the app would work.
+--
+-- Two different locks are at play and both must open: a GRANT decides whether a
+-- role may touch the table at all, and the Row Level Security policies below
+-- decide which rows it then sees. The grants here are deliberately wide and the
+-- policies narrow, which is the usual Supabase arrangement.
+--
+-- "anon" gets nothing on purpose. Every screen in this app requires a login, so
+-- an anonymous visitor has no reason to reach a table; RLS would hand back zero
+-- rows anyway, but the right not to look is better not given at all.
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['settings', 'products', 'customers', 'documents', 'cash_closings', 'cash_entries']
+  loop
+    execute format('grant select, insert, update, delete on public.%I to authenticated', t);
+    execute format('grant all on public.%I to service_role', t);
+  end loop;
+end $$;
+
+-- ---------------------------------------------------------------------
 -- 2. Row Level Security — each user only ever sees their own data
 -- ---------------------------------------------------------------------
 alter table public.settings enable row level security;
@@ -402,6 +429,24 @@ revoke all on function public.close_all_finished_days() from public, anon, authe
 -- to the one role that should have it.
 revoke all on function public.close_my_finished_days() from public, anon, authenticated;
 grant execute on function public.close_my_finished_days() to authenticated;
+
+-- The functions the app calls directly, on the same footing: taken away from
+-- everyone first, because Postgres hands EXECUTE to PUBLIC by default, then
+-- given back only to a signed-in shop. Each one already scopes its work to
+-- auth.uid(), so a signed-in caller can only ever move their own numbers.
+revoke all on function public.next_document_number(text) from public, anon, authenticated;
+grant execute on function public.next_document_number(text) to authenticated;
+
+revoke all on function public.adjust_stock(uuid, numeric) from public, anon, authenticated;
+grant execute on function public.adjust_stock(uuid, numeric) to authenticated;
+
+revoke all on function public.shop_today() from public, anon, authenticated;
+grant execute on function public.shop_today() to authenticated;
+
+-- public.handle_new_user() is deliberately left alone. It is a trigger function
+-- fired by Supabase's auth service when an account is created, not something the
+-- app calls, and PostgREST does not publish functions returning "trigger".
+-- Revoking here risks breaking sign-up for no gain.
 
 -- The scheduled run. Hourly rather than once at midnight, so an hour the job
 -- missed (or a project that was paused) still catches up: closing is

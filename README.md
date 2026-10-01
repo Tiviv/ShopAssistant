@@ -245,6 +245,26 @@ it separate from yours); share your actual login instead if you want them
 to see your data. The anon key is meant to be shared this way — it's the
 public key, safe outside the browser, not the secret `service_role` key.
 
+### Data API grants
+
+From 30 October 2026 Supabase stops granting Data API access to new tables in
+`public` automatically. Existing projects keep what they have, so a project set
+up before that date keeps working untouched — but a *new* project created after
+it would get the tables from `schema.sql` and then refuse every request with
+"permission denied".
+
+`supabase/schema.sql` therefore grants the access itself, next to the tables it
+creates. Two separate locks are involved and both must open: a `GRANT` decides
+whether a role may touch a table at all, and the Row Level Security policies
+decide which rows it then sees.
+
+The `anon` role is given nothing, on tables or on functions. Every screen in
+this app requires a login, so an anonymous visitor has no reason to reach the
+data; RLS would return no rows anyway, but the privilege is better not granted
+than granted and filtered. The functions the app calls are likewise restricted
+to `authenticated`, and the two that take or loop over an owner id are revoked
+from everyone, so one shop can never close another shop's days.
+
 ### Updating an existing project's schema
 
 `supabase/schema.sql` is safe to re-run in full any time it changes — every
