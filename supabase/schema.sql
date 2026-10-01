@@ -151,15 +151,28 @@ create index if not exists cash_entries_owner_date_idx on public.cash_entries (o
 -- decide which rows it then sees. The grants here are deliberately wide and the
 -- policies narrow, which is the usual Supabase arrangement.
 --
--- "anon" gets nothing on purpose. Every screen in this app requires a login, so
--- an anonymous visitor has no reason to reach a table; RLS would hand back zero
--- rows anyway, but the right not to look is better not given at all.
+-- This block is authoritative rather than additive: it revokes first, so that a
+-- project created while Supabase still auto-granted everything ends up with the
+-- same privileges as a fresh one. Two things that auto-grant left behind are
+-- worth removing deliberately.
+--
+-- "anon" had full access to every table. No screen in this app works without a
+-- login, so an anonymous visitor has no reason to reach one. RLS already hands
+-- such a caller zero rows, but that leaves the whole defence resting on the
+-- policies alone — and the anon key is public by design, printed in share links.
+--
+-- "authenticated" had TRUNCATE, which is the sharper of the two: TRUNCATE is not
+-- filtered by Row Level Security, so the one privilege that empties a table
+-- whole is also the one the policies cannot police. Anyone who signs up through
+-- a shared link becomes "authenticated" in this project, so it has to go. The
+-- four statements the app actually issues are all that is given back.
 do $$
 declare
   t text;
 begin
   foreach t in array array['settings', 'products', 'customers', 'documents', 'cash_closings', 'cash_entries']
   loop
+    execute format('revoke all on public.%I from public, anon, authenticated', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
     execute format('grant all on public.%I to service_role', t);
   end loop;

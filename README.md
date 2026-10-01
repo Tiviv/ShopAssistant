@@ -258,7 +258,20 @@ creates. Two separate locks are involved and both must open: a `GRANT` decides
 whether a role may touch a table at all, and the Row Level Security policies
 decide which rows it then sees.
 
-The `anon` role is given nothing, on tables or on functions. Every screen in
+The block revokes before it grants, so a project created while Supabase still
+auto-granted everything ends up with the same privileges as a fresh one. That
+matters for two privileges the old auto-grant left behind:
+
+- **`anon` had full access to every table.** RLS returned it no rows, so nothing
+  leaked — but it left the whole defence resting on the policies alone, and the
+  anon key is public by design, printed in share links.
+- **`authenticated` had TRUNCATE.** This is the sharper one: TRUNCATE is *not*
+  filtered by Row Level Security, so the one statement that empties a table
+  whole is the one the policies cannot police. Anyone who signs up through a
+  shared link becomes `authenticated` in that project.
+
+Re-running `schema.sql` clears both. The `anon` role is given nothing, on tables
+or on functions. Every screen in
 this app requires a login, so an anonymous visitor has no reason to reach the
 data; RLS would return no rows anyway, but the privilege is better not granted
 than granted and filtered. The functions the app calls are likewise restricted
