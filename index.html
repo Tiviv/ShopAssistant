@@ -4,7 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ShopAssistant / Магазинер</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!-- Pinned to one exact release, with an integrity hash: "@2" would load whatever the CDN
+     serves today, and without the hash a tampered file would run with full access to the
+     logged-in session. To upgrade, change the version and recompute the hash from the npm tarball. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK" crossorigin="anonymous"></script>
 <style>
   :root {
     --bg: #faf9f6;
@@ -911,6 +914,9 @@ function clearConfig() { localStorage.removeItem(CONFIG_KEY); cfg = null; }
 function cacheState() {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(state)); } catch (e) {}
 }
+function clearCachedState() {
+  try { localStorage.removeItem(CACHE_KEY); } catch (e) {}
+}
 function loadCachedState() {
   try { const raw = localStorage.getItem(CACHE_KEY); return raw ? { ...defaultState(), ...JSON.parse(raw) } : null; } catch (e) { return null; }
 }
@@ -1169,6 +1175,10 @@ function cancelRecovery() {
 async function doLogout() {
   await supabaseClient.auth.signOut();
   teardownRealtime();
+  // The offline copy holds every customer, invoice and price. Leaving it behind
+  // after logout would keep the shop's data readable on a shared computer, and
+  // could show it to the next account that logs in here while offline.
+  clearCachedState();
   dataLoaded = false; state = defaultState();
   render();
 }
