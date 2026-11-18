@@ -172,6 +172,29 @@ unlinked. If a customer with that name (and a matching ЕИК, when both have on
 is already on file — added by hand since the quote was written — they are linked
 silently rather than offered up as a duplicate.
 
+### Typed document numbers
+
+Invoices and offers have a **Номер** field. Left empty, the number comes from
+the automatic counter as before. Typed in, that number is used instead, as long
+as no other document of the same type already has it. A typed number at or
+above the counter moves the counter past it, so automatic numbering carries on
+from there; an automatic number that someone already took by hand is skipped.
+`schema.sql` also adds a unique index on (owner, type, number) so the database
+itself refuses a duplicate. An invoice that has a credit note keeps its number,
+because the credit note points at it by number.
+
+### Offer terms
+
+An offer can optionally say how long it is valid (a date, with +7/+14/+30 day
+shortcuts), a contact phone and e-mail, the accepted ways of payment (cash,
+card, bank transfer — any combination) and a free-text payment note such as
+"50% аванс". They print under a **Условия** heading; when bank transfer is
+ticked, the shop's IBAN prints too. A new offer starts with the contact details
+and payment terms of the previous one. The offers list shows each offer's
+validity and marks expired ones. These need the five new `documents` columns
+from `schema.sql`; until it is re-run, saving an offer explains that instead of
+failing silently, and invoices are unaffected.
+
 ### Invoicing by department
 
 A line on an invoice or quote can be a **whole department** instead of a

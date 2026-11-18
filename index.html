@@ -161,6 +161,14 @@
   .field-wrap.has-error input, .field-wrap.has-error select { border-color: var(--danger); }
   input:disabled, select:disabled { background: var(--bg); color: var(--text-secondary); cursor: not-allowed; }
 
+  .offer-extras { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 4px; margin: 4px 0 12px; }
+  .offer-extras legend { font-size: 12px; color: var(--text-secondary); padding: 0 4px; }
+  .quick-days { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+  .quick-days button { font-size: 11px; padding: 2px 8px; }
+  .check-row { display: flex; gap: 16px; flex-wrap: wrap; padding: 4px 0 8px; }
+  .check-row label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+  .check-row input[type=checkbox] { width: auto; margin: 0; }
+
   .modal-overlay { position: fixed; inset: 0; background: rgba(20, 18, 14, 0.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 1rem; }
   .modal-card { background: var(--surface); border-radius: 12px; padding: 1.5rem; max-width: 420px; width: 100%; max-height: 85vh; overflow: auto; }
   .detail-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
@@ -377,7 +385,19 @@ const TRANSLATIONS = {
     amountPlaceholder: "сума",
     addRow: "+ Добави ред", taxBase: "Данъчна основа", vatLabel: "ДДС", removeTitle: "Премахни",
     saveChanges: "Запази промените", editDocTitle: "Редакция на {type} № {n}",
-    editDocHelp: "Номерът остава същият. Наличностите се преизчисляват спрямо промените.",
+    editDocHelp: "Наличностите се преизчисляват спрямо промените.",
+    docNumber: "Номер", docNumberAuto: "автоматично (№ {n})",
+    docNumberHint: "Оставете номера празен за автоматичен, или въведете свой. Следващите автоматични номера продължават след най-големия въведен.",
+    errNumberRequired: "Въведете номер.", errNumberFormat: "Номерът трябва да е цяло положително число.",
+    errNumberTaken: "Номер {n} вече е използван.", errNumberHasCredit: "Към тази фактура има кредитно известие, затова номерът ѝ не може да се смени.",
+    offerExtrasTitle: "Условия на офертата (по избор)", validUntil: "Валидна до", plusDays: "+{n} дни", noValidity: "без срок",
+    contactPhone: "Телефон за контакт", contactEmail: "Имейл за контакт",
+    offerPaymentWays: "Начини на плащане", paymentNote: "Подробности за плащането",
+    paymentNotePlaceholder: "напр. 50% аванс, остатъкът при доставка",
+    errValidBeforeDate: "Срокът не може да е преди датата на офертата.",
+    offerExpired: "изтекла на {d}", validUntilShort: "валидна до {d}",
+    offerSchemaMissing: "Новите полета на офертата (срок, контакти, плащане) още не са в базата. Изпълнете отново supabase/schema.sql в Supabase → SQL Editor и опитайте пак.",
+    validUntilColon: "Офертата е валидна до: {d}", offerPaymentWaysColon: "Начини на плащане: {m}", offerTermsTitle: "Условия",
     typeInvoice: "фактура", typeOffer: "оферта",
     addAtLeastOneProduct: "Добавете поне един продукт.", numberingError: "Грешка при номериране: ",
     convertConfirm: "Превръщане на оферта № {n} ({sum}) във фактура?",
@@ -587,7 +607,19 @@ const TRANSLATIONS = {
     amountPlaceholder: "amount",
     addRow: "+ Add row", taxBase: "Net amount", vatLabel: "VAT", removeTitle: "Remove",
     saveChanges: "Save changes", editDocTitle: "Editing {type} No. {n}",
-    editDocHelp: "The number stays the same. Stock is recalculated against your changes.",
+    editDocHelp: "Stock is recalculated against your changes.",
+    docNumber: "Number", docNumberAuto: "automatic (No. {n})",
+    docNumberHint: "Leave the number empty for an automatic one, or type your own. Later automatic numbers continue after the highest one typed.",
+    errNumberRequired: "Enter a number.", errNumberFormat: "The number must be a positive whole number.",
+    errNumberTaken: "Number {n} is already used.", errNumberHasCredit: "This invoice has a credit note, so its number cannot change.",
+    offerExtrasTitle: "Quote terms (optional)", validUntil: "Valid until", plusDays: "+{n} days", noValidity: "no limit",
+    contactPhone: "Contact phone", contactEmail: "Contact email",
+    offerPaymentWays: "Ways of payment", paymentNote: "Payment details",
+    paymentNotePlaceholder: "e.g. 50% upfront, the rest on delivery",
+    errValidBeforeDate: "Validity cannot end before the quote date.",
+    offerExpired: "expired {d}", validUntilShort: "valid until {d}",
+    offerSchemaMissing: "The new quote fields (validity, contacts, payment) are not in the database yet. Re-run supabase/schema.sql in Supabase → SQL Editor and try again.",
+    validUntilColon: "This quote is valid until: {d}", offerPaymentWaysColon: "Ways of payment: {m}", offerTermsTitle: "Terms",
     typeInvoice: "invoice", typeOffer: "quote",
     addAtLeastOneProduct: "Add at least one product.", numberingError: "Numbering error: ",
     convertConfirm: "Convert quote No. {n} ({sum}) into an invoice?",
@@ -824,7 +856,10 @@ function docRowToObj(row) {
     items: row.items || [], vatRate: Number(row.vat_rate), subtotal: Number(row.subtotal), vatAmount: Number(row.vat_amount),
     total: Number(row.total), paid: row.paid, relatedInvoiceNumber: row.related_invoice_number,
     convertedFromOfferId: row.converted_from_offer_id, invoicedInId: row.invoiced_in_id,
-    paymentMethod: row.payment_method || "cash", createdAt: row.created_at
+    paymentMethod: row.payment_method || "cash", createdAt: row.created_at,
+    // Offer-only extras; undefined columns (schema not yet re-run) read as empty.
+    validUntil: row.valid_until || "", contactPhone: row.contact_phone || "", contactEmail: row.contact_email || "",
+    paymentMethods: Array.isArray(row.payment_methods) ? row.payment_methods : [], paymentNote: row.payment_note || ""
   };
 }
 function cashClosingRowToObj(row) {
@@ -1670,10 +1705,88 @@ function validateManualCustomer(c) {
 
 function emptyLineItem() { return { id: uid(), productId: "", category: "", name: "", unit: "", qty: 1, price: 0, amountMode: false }; }
 
+// ---------- document numbers ----------
+// Invoices and offers may carry a number typed by hand (e.g. carrying on from a
+// paper pad, or starting a fresh series). The automatic counter still exists:
+// a typed number only bumps it forward, and an automatic number that someone
+// already took by hand is skipped rather than handed out twice.
+const COUNTER_COLS = { invoice: ["next_invoice_no", "nextInvoiceNo"], offer: ["next_offer_no", "nextOfferNo"],
+  credit: ["next_credit_no", "nextCreditNo"], receipt: ["next_receipt_no", "nextReceiptNo"] };
+function hasManualNumber(docType) { return docType === "invoice" || docType === "offer"; }
+function numberTaken(docType, n, exceptId) {
+  return state.documents.some(d => d.docType === docType && Number(d.number) === Number(n) && d.id !== exceptId);
+}
+async function nextFreeNumber(docType) {
+  for (let i = 0; i < 200; i++) {
+    const res = await supabaseClient.rpc("next_document_number", { p_doc_type: docType });
+    if (res.error || !numberTaken(docType, res.data)) return res;
+  }
+  return { data: null, error: { message: "no free number found" } };
+}
+async function bumpCounterPast(docType, n) {
+  const [col, key] = COUNTER_COLS[docType];
+  if (Number(n) < (Number(state.settings[key]) || 1)) return;
+  const { error } = await supabaseClient.from("settings").update({ [col]: Number(n) + 1 }).eq("owner_id", session.user.id);
+  if (error) console.error("moving the counter past a typed number failed", error);
+}
+function parseDocNumber(v) {
+  const s = String(v == null ? "" : v).trim();
+  if (!s) return null;
+  return /^\d{1,9}$/.test(s) && Number(s) > 0 ? Number(s) : NaN;
+}
+function validateDocNumber() {
+  if (!hasManualNumber(docForm.docType)) return;
+  const n = parseDocNumber(docForm.numberInput);
+  if (n === null) { if (docForm.editingId) docErrors.number = t("errNumberRequired"); return; }
+  if (Number.isNaN(n)) { docErrors.number = t("errNumberFormat"); return; }
+  if (numberTaken(docForm.docType, n, docForm.editingId)) { docErrors.number = t("errNumberTaken", { n }); return; }
+  if (docForm.editingId && docForm.docType === "invoice" && n !== Number(docForm.number)
+      && state.documents.some(x => x.docType === "credit" && Number(x.relatedInvoiceNumber) === Number(docForm.number))) {
+    docErrors.number = t("errNumberHasCredit");
+  }
+}
+
+// ---------- offer extras ----------
+function emptyOfferExtras() { return { validUntil: "", contactPhone: "", contactEmail: "", paymentMethods: [], paymentNote: "" }; }
+// A new offer starts with the contact details and payment terms of the last
+// offer that had any, since they are nearly always the shop's own and the same.
+function lastOfferExtras() {
+  const offers = state.documents.filter(d => d.docType === "offer" &&
+    (d.contactPhone || d.contactEmail || (d.paymentMethods || []).length || d.paymentNote));
+  const last = offers[offers.length - 1];
+  if (!last) return emptyOfferExtras();
+  return { validUntil: "", contactPhone: last.contactPhone, contactEmail: last.contactEmail,
+    paymentMethods: (last.paymentMethods || []).slice(), paymentNote: last.paymentNote };
+}
+function addDaysStr(dateStr, days) {
+  const [y, m, d] = String(dateStr || todayStr()).split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().slice(0, 10);
+}
+function setValidityDays(days) { docForm.validUntil = addDaysStr(docForm.date, days); render(); }
+function toggleOfferPayment(key, on) {
+  const list = (docForm.paymentMethods || []).filter(k => k !== key);
+  if (on) list.push(key);
+  docForm.paymentMethods = PAYMENT_METHOD_KEYS.filter(k => list.includes(k));
+}
+function validateOfferExtras() {
+  if (docForm.docType !== "offer") return;
+  if (!isValidPhone(docForm.contactPhone)) docErrors.contactPhone = t("errPhone");
+  if (!isValidEmail(docForm.contactEmail)) docErrors.contactEmail = t("errEmail");
+  if (docForm.validUntil && docForm.validUntil < docForm.date) docErrors.validUntil = t("errValidBeforeDate");
+}
+// The extra columns only exist once schema.sql has been re-run. Until then an
+// offer save fails on them, and the owner gets that one instruction instead of
+// a raw database message.
+function isMissingColumnError(err) {
+  return !!err && (err.code === "PGRST204" || err.code === "42703" || /column .* (does not exist|could not find)|Could not find the '.*' column/i.test(err.message || ""));
+}
+
 function newDoc(docType) {
   docForm = { docType, date: todayStr(), customerId: "", customerName: "", manual: false,
     manualCustomer: emptyManualCustomer(), items: [emptyLineItem()],
-    vatRate: docType === "receipt" ? 0 : 20, paid: false, paymentMethod: "cash" };
+    vatRate: docType === "receipt" ? 0 : 20, paid: false, paymentMethod: "cash",
+    numberInput: "", ...(docType === "offer" ? lastOfferExtras() : emptyOfferExtras()) };
   docErrors = {};
   creditForm = null; creditFormError = "";
   render();
@@ -1704,7 +1817,10 @@ function editDoc(id) {
           vatNumber: d.customerSnapshot.vatNumber || "", address: d.customerSnapshot.address || "" }
       : { ...emptyManualCustomer(), name: d.customerName || "" },
     items: d.items.length ? d.items.map(it => ({ ...it })) : [emptyLineItem()],
-    vatRate: d.vatRate, paid: d.paid, paymentMethod: d.paymentMethod || "cash"
+    vatRate: d.vatRate, paid: d.paid, paymentMethod: d.paymentMethod || "cash",
+    numberInput: String(d.number),
+    validUntil: d.validUntil || "", contactPhone: d.contactPhone || "", contactEmail: d.contactEmail || "",
+    paymentMethods: (d.paymentMethods || []).slice(), paymentNote: d.paymentNote || ""
   };
   docErrors = {};
   creditForm = null; creditFormError = ""; printingDocId = null;
@@ -1813,10 +1929,11 @@ async function applyStockAdjustments(items) {
 }
 
 async function saveDoc() {
-  if (docForm.manual) {
-    docErrors = validateManualCustomer(docForm.manualCustomer);
-    if (Object.keys(docErrors).length) { render(); return; }
-  }
+  docErrors = docForm.manual ? validateManualCustomer(docForm.manualCustomer) : {};
+  validateDocNumber();
+  validateOfferExtras();
+  if (Object.keys(docErrors).length) { render(); return; }
+  const typedNumber = hasManualNumber(docForm.docType) ? parseDocNumber(docForm.numberInput) : null;
   if (docForm.items.every(it => !it.name)) { alert(t("addAtLeastOneProduct")); return; }
   const customer = docForm.manual ? null : state.customers.find(c => c.id === docForm.customerId);
   // Typed-in details are stored as the document's customer snapshot, which is
@@ -1835,16 +1952,32 @@ async function saveDoc() {
     vat_rate: docForm.vatRate, subtotal: tot.subtotal, vat_amount: tot.vatAmount, total: tot.total,
     paid: !!docForm.paid, payment_method: docForm.paymentMethod || "cash"
   };
+  if (docForm.docType === "offer") {
+    Object.assign(fields, {
+      valid_until: docForm.validUntil || null,
+      contact_phone: (docForm.contactPhone || "").trim() || null,
+      contact_email: (docForm.contactEmail || "").trim() || null,
+      payment_methods: (docForm.paymentMethods || []).length ? docForm.paymentMethods : null,
+      payment_note: (docForm.paymentNote || "").trim() || null
+    });
+  }
+  const failSave = err => {
+    if (isMissingColumnError(err)) { console.error(err); alert(t("offerSchemaMissing")); return; }
+    if (err && err.code === "23505") { docErrors.number = t("errNumberTaken", { n: typedNumber || "" }); render(); return; }
+    flashSaved(false, t("errorPrefix") + err.message);
+  };
 
   if (docForm.editingId) {
+    if (typedNumber && typedNumber !== Number(docForm.number)) fields.number = typedNumber;
     const original = state.documents.find(x => x.id === docForm.editingId);
     // Snapshot the pre-edit lines before state is replaced — stock has to be
     // rewound by exactly what the old version took before the new one applies.
     const originalItems = original ? original.items.map(it => ({ ...it })) : [];
     const wasInvoice = original && movesStock(original.docType);
     const res = await supabaseClient.from("documents").update(fields).eq("id", docForm.editingId).select().single();
-    if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
+    if (res.error) { failSave(res.error); return; }
     const updated = docRowToObj(res.data);
+    if (fields.number) { await bumpCounterPast(updated.docType, fields.number); await refetchTable("settings"); }
     const idx = state.documents.findIndex(x => x.id === updated.id);
     if (idx >= 0) state.documents[idx] = updated;
     docForm = null;
@@ -1857,12 +1990,17 @@ async function saveDoc() {
     return;
   }
 
-  const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: docForm.docType });
-  if (numErr) { flashSaved(false, t("numberingError") + numErr.message); return; }
+  let number = typedNumber;
+  if (!number) {
+    const { data, error: numErr } = await nextFreeNumber(docForm.docType);
+    if (numErr) { flashSaved(false, t("numberingError") + numErr.message); return; }
+    number = data;
+  }
 
   const row = { owner_id: session.user.id, doc_type: docForm.docType, number, ...fields };
   const res = await supabaseClient.from("documents").insert(row).select().single();
-  if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
+  if (res.error) { failSave(res.error); return; }
+  if (typedNumber) await bumpCounterPast(row.doc_type, typedNumber);
   state.documents.push(docRowToObj(res.data));
   docForm = null;
   cacheState(); flashSaved(true); render();
@@ -2014,7 +2152,7 @@ async function consolidateReceipts() {
   const rate = consolidateForm.vatRate;
   if (!confirm(t("consolidateConfirm", { n: chosen.length, sum: money(subtotal) }))) return;
 
-  const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: "invoice" });
+  const { data: number, error: numErr } = await nextFreeNumber("invoice");
   if (numErr) { flashSaved(false, t("errorPrefix") + numErr.message); return; }
   const first = chosen[0];
   const vatAmount = subtotal * rate / 100;
@@ -2051,13 +2189,15 @@ async function convertToInvoice(id) {
   const offerDoc = state.documents.find(d => d.id === id);
   if (!confirm(t("convertConfirm", { n: offerDoc.number, sum: money(offerDoc.total) }))) return;
   const customerId = await ensureCustomerForOffer(offerDoc);
-  const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: "invoice" });
+  const { data: number, error: numErr } = await nextFreeNumber("invoice");
   if (numErr) { flashSaved(false, t("errorPrefix") + numErr.message); return; }
   const row = {
     owner_id: session.user.id, doc_type: "invoice", number, date: todayStr(),
     customer_id: customerId, customer_name: offerDoc.customerName, customer_snapshot: offerDoc.customerSnapshot,
     items: offerDoc.items, vat_rate: offerDoc.vatRate, subtotal: offerDoc.subtotal, vat_amount: offerDoc.vatAmount,
-    total: offerDoc.total, paid: false, converted_from_offer_id: offerDoc.id, payment_method: offerDoc.paymentMethod || "cash"
+    total: offerDoc.total, paid: false, converted_from_offer_id: offerDoc.id,
+    // An offer that names exactly one way of paying has already settled it.
+    payment_method: (offerDoc.paymentMethods || []).length === 1 ? offerDoc.paymentMethods[0] : (offerDoc.paymentMethod || "cash")
   };
   const res = await supabaseClient.from("documents").insert(row).select().single();
   if (res.error) { flashSaved(false, t("errorPrefix") + res.error.message); return; }
@@ -2125,7 +2265,7 @@ async function saveCreditNote() {
   creditFormError = "";
   if (!confirm(t("creditConfirm", { n: tot.selected.length, sum: money(tot.total), inv: invoice.number }))) return;
 
-  const { data: number, error: numErr } = await supabaseClient.rpc("next_document_number", { p_doc_type: "credit" });
+  const { data: number, error: numErr } = await nextFreeNumber("credit");
   if (numErr) { flashSaved(false, t("errorPrefix") + numErr.message); return; }
   const items = tot.selected.map(it => ({ id: it.id, productId: it.productId, name: it.name, unit: it.unit, price: it.price, qty: -Math.abs(Number(it.creditQty)) }));
   const row = {
@@ -2422,6 +2562,10 @@ function renderDocuments(docType, title) {
                   return inv ? `<span class="muted">${t("invoicedIn", { n: inv.number })}</span>`
                              : `<span class="pill unpaid">${t("notInvoiced")}</span>`;
                 })()
+              : d.docType === "offer" && d.validUntil
+                ? (d.validUntil < todayStr()
+                    ? `<span class="pill unpaid">${t("offerExpired", { d: d.validUntil })}</span>`
+                    : `<span class="muted">${t("validUntilShort", { d: d.validUntil })}</span>`)
               : "—"
             }</td>
             <td class="actions-cell">
@@ -2448,6 +2592,12 @@ function renderDocForm() {
     <div class="card">
       ${docForm.editingId ? `<h3 style="margin-top:0;">${t("editDocTitle", { type: typeLabel, n: docForm.number })}</h3><p class="muted" style="font-size:13px;">${t("editDocHelp")}</p>` : ""}
       <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom:6px;">
+        ${hasManualNumber(docForm.docType) ? (() => {
+          const nextNo = docForm.docType === "invoice" ? state.settings.nextInvoiceNo : state.settings.nextOfferNo;
+          return `<div class="field-wrap ${docErrors.number ? "has-error" : ""}"><label class="field">${t("docNumber")}</label>
+            <input inputmode="numeric" value="${esc(docForm.numberInput)}" oninput="updateDocField('numberInput', this.value)"
+              placeholder="${docForm.editingId ? "" : t("docNumberAuto", { n: nextNo })}">${fieldError(docErrors, "number")}</div>`;
+        })() : ""}
         <div class="field-wrap"><label class="field">${t("date")}</label><input type="date" value="${docForm.date}" oninput="updateDocField('date', this.value)"></div>
         <div class="field-wrap"><label class="field">${t("client")}</label>
           <select onchange="pickDocCustomer(this.value)">
@@ -2470,6 +2620,7 @@ function renderDocForm() {
         ` : ""}
       </div>
       ${isReceipt ? `<p class="muted" style="font-size:12px; margin:0 0 8px;">${t("receiptNoVatNote")}</p>` : ""}
+      ${hasManualNumber(docForm.docType) && !docForm.editingId ? `<p class="muted" style="font-size:12px; margin:0 0 8px;">${t("docNumberHint")}</p>` : ""}
       ${docForm.manual ? `
         <p class="muted" style="font-size:12px; margin:0 0 8px;">${t("manualCustomerHint")}</p>
         <div class="grid" style="grid-template-columns: 2fr 1fr 1fr 2fr; margin-bottom:6px;">
@@ -2483,6 +2634,7 @@ function renderDocForm() {
             <input value="${esc(docForm.manualCustomer.address)}" oninput="updateManualCustomer('address', this.value)"></div>
         </div>
       ` : ""}
+      ${docForm.docType === "offer" ? renderOfferExtrasForm() : ""}
       <div class="item-row" style="font-size:12px; color: var(--text-muted);"><span>${t("product")}</span><span>${t("unit")}</span><span>${t("qty")}</span><span>${t("price")}</span><span></span><span></span></div>
       ${docForm.items.map((it, idx) => {
         const src = lineSourceValue(it);
@@ -2516,6 +2668,37 @@ function renderDocForm() {
       <div id="doc-totals" style="text-align:right; margin-bottom: 10px;">${renderDocTotalsInner(tot)}</div>
       <div class="savebar"><button class="primary" onclick="saveDoc()">${docForm.editingId ? t("saveChanges") : t("save")}</button><button onclick="cancelDocForm()">${t("cancel")}</button></div>
     </div>
+  `;
+}
+
+// Validity, contact and payment terms are all optional; an offer printed with
+// none of them filled looks exactly as it did before they existed.
+function renderOfferExtrasForm() {
+  const methods = docForm.paymentMethods || [];
+  return `
+    <fieldset class="offer-extras">
+      <legend>${t("offerExtrasTitle")}</legend>
+      <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom:6px;">
+        <div class="field-wrap ${docErrors.validUntil ? "has-error" : ""}"><label class="field">${t("validUntil")}</label>
+          <input type="date" value="${esc(docForm.validUntil)}" min="${esc(docForm.date)}" oninput="updateDocField('validUntil', this.value)">
+          <div class="quick-days">
+            ${[7, 14, 30].map(n => `<button type="button" onclick="setValidityDays(${n})">${t("plusDays", { n })}</button>`).join("")}
+            ${docForm.validUntil ? `<button type="button" onclick="updateDocField('validUntil', ''); render();">${t("noValidity")}</button>` : ""}
+          </div>
+          ${fieldError(docErrors, "validUntil")}</div>
+        <div class="field-wrap ${docErrors.contactPhone ? "has-error" : ""}"><label class="field">${t("contactPhone")}</label>
+          <input type="tel" value="${esc(docForm.contactPhone)}" oninput="updateDocField('contactPhone', this.value)">${fieldError(docErrors, "contactPhone")}</div>
+        <div class="field-wrap ${docErrors.contactEmail ? "has-error" : ""}"><label class="field">${t("contactEmail")}</label>
+          <input type="email" value="${esc(docForm.contactEmail)}" oninput="updateDocField('contactEmail', this.value)">${fieldError(docErrors, "contactEmail")}</div>
+      </div>
+      <div class="field-wrap"><label class="field">${t("offerPaymentWays")}</label>
+        <div class="check-row">
+          ${PAYMENT_METHOD_KEYS.map(k => `<label class="check"><input type="checkbox" ${methods.includes(k) ? "checked" : ""} onchange="toggleOfferPayment('${k}', this.checked)"> ${paymentLabel(k)}</label>`).join("")}
+        </div>
+      </div>
+      <div class="field-wrap"><label class="field">${t("paymentNote")}</label>
+        <input value="${esc(docForm.paymentNote)}" oninput="updateDocField('paymentNote', this.value)" placeholder="${t("paymentNotePlaceholder")}"></div>
+    </fieldset>
   `;
 }
 
@@ -2665,6 +2848,8 @@ function renderPrintable(doc) {
           ${s.vatNumber ? `<div>${T("vatNumber")}: ${esc(s.vatNumber)}</div>` : ""}
           <div>${esc(s.address) || "—"}</div>
           ${s.mol ? `<div>${T("mol")}: ${esc(s.mol)}</div>` : ""}
+          ${doc.docType === "offer" && doc.contactPhone ? `<div>${T("phone")}: ${esc(doc.contactPhone)}</div>` : ""}
+          ${doc.docType === "offer" && doc.contactEmail ? `<div>${T("email")}: ${esc(doc.contactEmail)}</div>` : ""}
         </div>
         <div>
           <div style="font-weight:600; margin-bottom:4px;">${T("recipient")}</div>
@@ -2703,12 +2888,27 @@ function renderPrintable(doc) {
         <div>${T("vatLabel")} (${doc.vatRate}%): ${m(doc.vatAmount)}</div>
         <div style="font-weight:600; font-size:15px;">${T("totalToPay")}: ${m(doc.total)}</div>
       </div>
+      ${doc.docType === "offer" ? renderOfferTerms(doc, T) : ""}
       <div style="display:flex; justify-content:space-between; font-size:12px; color:#555; margin-top:3rem;">
         <div>${T("preparedBy")}: _______________</div>
         <div>${T("receivedBy")}: _______________</div>
       </div>
     </div>
   `;
+}
+
+function renderOfferTerms(doc, T) {
+  const dl = printLangFor(doc);
+  const methods = doc.paymentMethods || [];
+  const lines = [];
+  if (doc.validUntil) lines.push(`<div>${T("validUntilColon", { d: esc(doc.validUntil) })}</div>`);
+  if (methods.length) lines.push(`<div>${T("offerPaymentWaysColon", { m: methods.map(k => paymentLabelIn(dl, k)).join(", ") })}</div>`);
+  // A bank transfer is no use to the customer without the account to send it to.
+  if (methods.includes("bank") && state.settings.iban) lines.push(`<div>IBAN: ${esc(state.settings.iban)}</div>`);
+  if (doc.paymentNote) lines.push(`<div>${esc(doc.paymentNote)}</div>`);
+  if (!lines.length) return "";
+  return `<div style="font-size:13px; margin: -1rem 0 2rem; border-top:1px solid #ccc; padding-top:0.6rem;">
+    <div style="font-weight:600; margin-bottom:4px;">${T("offerTermsTitle")}</div>${lines.join("")}</div>`;
 }
 
 // ---------- CASH REGISTER (daily close) ----------
@@ -3207,7 +3407,13 @@ async function runImport(imported, mode, opts) {
         customer_snapshot: d.customerSnapshot || null, items: d.items || [],
         vat_rate: d.vatRate, subtotal: d.subtotal, vat_amount: d.vatAmount, total: d.total,
         paid: !!d.paid, related_invoice_number: d.relatedInvoiceNumber || null,
-        payment_method: d.paymentMethod || "cash"
+        payment_method: d.paymentMethod || "cash",
+        // Only sent when the backup actually holds offer extras, so restoring an
+        // older file keeps working on a database that has not got the columns.
+        ...(d.validUntil || d.contactPhone || d.contactEmail || (d.paymentMethods || []).length || d.paymentNote ? {
+          valid_until: d.validUntil || null, contact_phone: d.contactPhone || null, contact_email: d.contactEmail || null,
+          payment_methods: (d.paymentMethods || []).length ? d.paymentMethods : null, payment_note: d.paymentNote || null
+        } : {})
       })));
       if (error) throw error;
     }
