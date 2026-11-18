@@ -103,6 +103,17 @@ end $$;
 -- One row per calendar day: what the till was counted at, vs. what invoices for
 -- that day say it should hold. Lets a shop close out a day the way a physical
 -- till/Z-report would, without needing an actual POS terminal.
+-- Offer-only extras, all optional: how long the offer stands, who the customer
+-- should call or write to about it, and which ways of paying the shop accepts
+-- (plus a free-text note such as "50% аванс"). Nullable on purpose, so invoices
+-- and receipts simply leave them empty and an import from an older backup needs
+-- no values for them.
+alter table public.documents add column if not exists valid_until date;
+alter table public.documents add column if not exists contact_phone text;
+alter table public.documents add column if not exists contact_email text;
+alter table public.documents add column if not exists payment_methods text[];
+alter table public.documents add column if not exists payment_note text;
+
 create table if not exists public.cash_closings (
   owner_id uuid not null references auth.users(id) on delete cascade,
   date date not null,
@@ -152,6 +163,17 @@ create index if not exists documents_owner_doctype_idx on public.documents (owne
 create index if not exists products_owner_idx on public.products (owner_id);
 create index if not exists customers_owner_idx on public.customers (owner_id);
 create index if not exists cash_entries_owner_date_idx on public.cash_entries (owner_id, date);
+
+-- Invoice and offer numbers can be typed by hand, so the database itself has to
+-- refuse a second "Фактура № 120". If the existing data already holds a
+-- duplicate, the index cannot be built: the run carries on and says so, and the
+-- app's own check still catches new duplicates until the old one is fixed.
+do $$
+begin
+  create unique index if not exists documents_owner_type_number_key on public.documents (owner_id, doc_type, number);
+exception when unique_violation then
+  raise notice 'documents already contain a duplicate number (%); fix it and re-run to add the uniqueness guard.', sqlerrm;
+end $$;
 
 -- ---------------------------------------------------------------------
 -- 1b. Data API grants
