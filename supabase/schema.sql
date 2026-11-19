@@ -5,11 +5,11 @@
 -- ---------------------------------------------------------------------
 -- 1. Tables
 -- ---------------------------------------------------------------------
--- Every table is scoped by owner_id = auth.uid(), and Row Level Security
--- (below) makes sure a logged-in user can only ever see/write their own
--- rows. If several people (owner + staff) should share one shop's data,
--- have them log in with the same account — see README.md for the
--- multi-login alternative if you outgrow that.
+-- Every table is scoped by owner_id, the account that owns the shop, and Row
+-- Level Security (below) makes sure a logged-in user can only ever see/write
+-- that shop's rows. Normally the shop is the user's own account; an extra
+-- login listed in public.shop_members works on its owner's shop instead, so
+-- several people can share one shop's data without sharing a password.
 
 create table if not exists public.settings (
   owner_id uuid primary key references auth.users(id) on delete cascade,
@@ -159,6 +159,17 @@ begin
 exception when duplicate_object then null;
 end $$;
 
+-- Extra logins that share a shop with its owner. One row per extra account:
+-- user_id works on owner_id's data. The owner needs no row. A login appears at
+-- most once, so it always belongs to exactly one shop. Rows are added by hand in
+-- the SQL Editor (see README.md); the app itself can only read its own row.
+create table if not exists public.shop_members (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  added_at timestamptz not null default now(),
+  check (user_id <> owner_id)
+);
+
 create index if not exists documents_owner_doctype_idx on public.documents (owner_id, doc_type);
 create index if not exists products_owner_idx on public.products (owner_id);
 create index if not exists customers_owner_idx on public.customers (owner_id);
@@ -174,6 +185,27 @@ begin
 exception when unique_violation then
   raise notice 'documents already contain a duplicate number (%); fix it and re-run to add the uniqueness guard.', sqlerrm;
 end $$;
+
+-- ---------------------------------------------------------------------
+-- 1a. Which shop the signed-in user works on
+-- ---------------------------------------------------------------------
+-- Their owner's shop if they are listed in shop_members, otherwise their own.
+-- Every policy and function below goes through this, so adding a member is the
+-- only step needed to let a second login see and edit the same data.
+-- SECURITY DEFINER so the policies can read shop_members without needing a
+-- policy on it that would call back into this function.
+create or replace function public.shop_owner()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce((select m.owner_id from public.shop_members m where m.user_id = auth.uid()), auth.uid())
+$$;
+
+revoke all on function public.shop_owner() from public, anon, authenticated;
+grant execute on function public.shop_owner() to authenticated;
 
 -- ---------------------------------------------------------------------
 -- 1b. Data API grants
@@ -215,8 +247,14 @@ begin
   end loop;
 end $$;
 
+-- Members may look up their own row and nothing else: who belongs to which
+-- shop is decided in the SQL Editor, never from the browser.
+revoke all on public.shop_members from public, anon, authenticated;
+grant select on public.shop_members to authenticated;
+grant all on public.shop_members to service_role;
+
 -- ---------------------------------------------------------------------
--- 2. Row Level Security — each user only ever sees their own data
+-- 2. Row Level Security — each user only ever sees their own shop's data
 -- ---------------------------------------------------------------------
 alter table public.settings enable row level security;
 alter table public.products enable row level security;
@@ -224,30 +262,38 @@ alter table public.customers enable row level security;
 alter table public.documents enable row level security;
 alter table public.cash_closings enable row level security;
 alter table public.cash_entries enable row level security;
+alter table public.shop_members enable row level security;
+
+drop policy if exists "own membership" on public.shop_members;
+create policy "own membership" on public.shop_members
+  for select using (user_id = auth.uid());
+
+-- "(select public.shop_owner())" rather than a bare call: Postgres then works it
+-- out once per query instead of once per row.
 
 drop policy if exists "own settings" on public.settings;
 create policy "own settings" on public.settings
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+  for all using (owner_id = (select public.shop_owner())) with check (owner_id = (select public.shop_owner()));
 
 drop policy if exists "own products" on public.products;
 create policy "own products" on public.products
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+  for all using (owner_id = (select public.shop_owner())) with check (owner_id = (select public.shop_owner()));
 
 drop policy if exists "own customers" on public.customers;
 create policy "own customers" on public.customers
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+  for all using (owner_id = (select public.shop_owner())) with check (owner_id = (select public.shop_owner()));
 
 drop policy if exists "own documents" on public.documents;
 create policy "own documents" on public.documents
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+  for all using (owner_id = (select public.shop_owner())) with check (owner_id = (select public.shop_owner()));
 
 drop policy if exists "own cash closings" on public.cash_closings;
 create policy "own cash closings" on public.cash_closings
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+  for all using (owner_id = (select public.shop_owner())) with check (owner_id = (select public.shop_owner()));
 
 drop policy if exists "own cash entries" on public.cash_entries;
 create policy "own cash entries" on public.cash_entries
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+  for all using (owner_id = (select public.shop_owner())) with check (owner_id = (select public.shop_owner()));
 
 -- ---------------------------------------------------------------------
 -- 3. Atomic invoice/offer/credit-note numbering
@@ -268,26 +314,26 @@ declare
 begin
   if p_doc_type = 'invoice' then
     update settings set next_invoice_no = next_invoice_no + 1, updated_at = now()
-      where owner_id = auth.uid()
+      where owner_id = public.shop_owner()
       returning next_invoice_no - 1 into v_number;
   elsif p_doc_type = 'offer' then
     update settings set next_offer_no = next_offer_no + 1, updated_at = now()
-      where owner_id = auth.uid()
+      where owner_id = public.shop_owner()
       returning next_offer_no - 1 into v_number;
   elsif p_doc_type = 'credit' then
     update settings set next_credit_no = next_credit_no + 1, updated_at = now()
-      where owner_id = auth.uid()
+      where owner_id = public.shop_owner()
       returning next_credit_no - 1 into v_number;
   elsif p_doc_type = 'receipt' then
     update settings set next_receipt_no = next_receipt_no + 1, updated_at = now()
-      where owner_id = auth.uid()
+      where owner_id = public.shop_owner()
       returning next_receipt_no - 1 into v_number;
   else
     raise exception 'unknown document type: %', p_doc_type;
   end if;
 
   if v_number is null then
-    raise exception 'no settings row for current user — app should create one on first login';
+    raise exception 'no settings row for this shop — app should create one on first login';
   end if;
 
   return v_number;
@@ -311,7 +357,7 @@ as $$
 begin
   update products
     set stock = coalesce(stock, 0) - p_qty
-    where id = p_product_id and owner_id = auth.uid() and stock is not null;
+    where id = p_product_id and owner_id = public.shop_owner() and stock is not null;
 end;
 $$;
 
@@ -451,7 +497,7 @@ set search_path = public
 as $$
 begin
   if auth.uid() is null then return 0; end if;
-  return public.close_finished_days(auth.uid());
+  return public.close_finished_days(public.shop_owner());
 end;
 $$;
 
@@ -466,7 +512,8 @@ declare
   v_owner uuid;
   v_closed int := 0;
 begin
-  for v_owner in select owner_id from settings loop
+  for v_owner in select s.owner_id from settings s
+                   where not exists (select 1 from shop_members m where m.user_id = s.owner_id) loop
     v_closed := v_closed + public.close_finished_days(v_owner);
   end loop;
   return v_closed;
@@ -487,7 +534,8 @@ grant execute on function public.close_my_finished_days() to authenticated;
 -- The functions the app calls directly, on the same footing: taken away from
 -- everyone first, because Postgres hands EXECUTE to PUBLIC by default, then
 -- given back only to a signed-in shop. Each one already scopes its work to
--- auth.uid(), so a signed-in caller can only ever move their own numbers.
+-- the caller's own shop (public.shop_owner()), so a signed-in caller can only
+-- ever move their own shop's numbers.
 revoke all on function public.next_document_number(text) from public, anon, authenticated;
 grant execute on function public.next_document_number(text) to authenticated;
 
