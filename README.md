@@ -352,10 +352,28 @@ hourly and only ever touches days that are already over in the shop's own
 timezone, which `public.shop_today()` defines — change it there if the shop
 is not in Bulgaria.
 
-Everyone who needs access (owner + staff) can either share that one login,
-or — if you want separate named logins later — say so and I'll add a
-`business_id` + membership table so multiple accounts can share one shop's
-data without sharing a password.
+### Several logins on one shop
+
+Every shop belongs to one account, the owner. Extra logins (staff, a backup
+admin) can work on the same data without sharing a password:
+
+1. Run the latest `schema.sql` (it adds the `shop_members` table and points
+   every policy and function at `public.shop_owner()`, the shop of whoever is
+   signed in).
+2. Create the login in Supabase: Authentication → Users → Add user → Create
+   new user, with "Auto Confirm User" ticked. This works with sign-ups off.
+3. Open `supabase/add-shop-member.sql`, put in the new login's e-mail and the
+   owner's e-mail, and run it in the SQL Editor.
+
+The new login then sees and edits exactly the owner's products, customers,
+documents and cash register, and shares the same invoice numbering. A login
+with no `shop_members` row keeps working on its own data as before. Logins
+can only read their own membership row; who belongs to which shop is decided
+in the SQL Editor only.
+
+To start a shop over without its test documents, `supabase/reset-test-data.sql`
+deletes every document, cash entry and closed day of one account and resets
+the document numbers, keeping the products, categories and company details.
 
 ## Cost
 
@@ -374,6 +392,6 @@ substantially.
 - Money fields use `numeric(12,2)` in Postgres now (exact decimal), which
   also fixes the old floating-point rounding drift risk from the offline
   version's plain JS `number` math.
-- No access control tiers yet (owner vs. staff) — anyone logged into the
-  shared account has full read/write. Worth adding once there's more than
+- No access control tiers yet (owner vs. staff) — every login on a shop
+  has full read/write on its data. Worth adding once there's more than
   one person truly needing separate accountability.
