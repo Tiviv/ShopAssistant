@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>Магазинер — разрешение за достъп</title>
+<!--
+  Consent page for the Магазинер MCP connector (supabase/functions/shop-mcp).
+
+  When Claude, ChatGPT or another AI app asks to use the shop, Supabase Auth's
+  OAuth 2.1 server sends the user here with ?authorization_id=…. The page signs
+  the user in with their normal shop account, shows which app is asking, and
+  approves or denies. Supabase then hands the app a token for this user only,
+  and Row Level Security limits it to the user's own shop, as in the web app.
+
+  Same Supabase library and integrity hash as index.html.
+-->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK" crossorigin="anonymous"></script>
+<style>
+  :root {
+    --bg: #faf9f6; --surface: #ffffff; --border: #e2e0d8;
+    --text: #2c2c2a; --text-secondary: #6b6a63;
+    --accent: #3b6d11; --accent-bg: #eaf3de;
+    --danger: #a32d2d; --danger-bg: #fcebeb;
+    --warning: #854f0b; --warning-bg: #faeeda;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5; }
+  main { max-width: 440px; margin: 0 auto; padding: 2rem 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; }
+  h1 { font-size: 20px; margin: 0 0 1rem; }
+  p { margin: 0 0 0.8rem; }
+  .muted { color: var(--text-secondary); font-size: 13px; }
+  ul { margin: 0 0 1rem; padding-left: 1.2rem; }
+  label { display: block; font-size: 13px; color: var(--text-secondary); margin: 0.6rem 0 0.2rem; }
+  input { width: 100%; padding: 0.55rem 0.7rem; font-size: 15px; border: 1px solid var(--border); border-radius: var(--radius); }
+  .row { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
+  button { flex: 1; padding: 0.65rem 1rem; font-size: 15px; border-radius: var(--radius); border: 1px solid var(--border);
+           background: var(--surface); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  .box { padding: 0.7rem 0.9rem; border-radius: var(--radius); font-size: 14px; margin-bottom: 1rem; }
+  .ok { background: var(--accent-bg); color: var(--accent); }
+  .warn { background: var(--warning-bg); color: var(--warning); }
+  .err { background: var(--danger-bg); color: var(--danger); }
+  .app { font-weight: 600; }
+  code { font-size: 13px; word-break: break-all; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main><div class="card" id="root"><p class="muted">Зареждане…</p></div></main>
+<script>
+"use strict";
+
+// Which Supabase project this page talks to. Chosen by the address the page
+// is opened on and never by anything in the URL, so a crafted link cannot
+// point it at someone else's project.
+const CONFIGS = {
+  // The live shop (same values as LIVE_CONFIG in index.html).
+  "shopassistant.svejoivkusno.com": {
+    url: "https://mrkhgsvfizmmcairbtey.supabase.co",
+    anonKey: "sb_publishable_yE4qYB_Gzmifm1haJegmaQ_1w8IRXQu",
+  },
+  // A separate test project, while trying the connector out from your own
+  // computer. Fill in the test project's URL and publishable key.
+  "localhost": { url: "", anonKey: "" },
+  "127.0.0.1": { url: "", anonKey: "" },
+};
+
+// Apps whose sign-in return address we recognise. Another app can still ask,
+// but the page warns loudly and only offers "Откажи". Add to this list only
+// after checking who the app is.
+const KNOWN_APPS = [
+  { name: "Claude", hosts: ["claude.ai", "claude.com"] },
+  { name: "ChatGPT", hosts: ["chatgpt.com", "chat.openai.com"] },
+  { name: "Gemini", hosts: ["gemini.google.com"] },
+  { name: "Тестов инструмент на вашия компютър (MCP Inspector)", hosts: ["localhost", "127.0.0.1"] },
+];
+
+const root = document.getElementById("root");
+const params = new URLSearchParams(location.search);
+const authorizationId = params.get("authorization_id");
+const cfg = CONFIGS[location.hostname];
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function show(html) { root.innerHTML = html; }
+
+function showError(message) {
+  show(`<h1>Магазинер</h1><div class="box err">${esc(message)}</div>
+        <p class="muted">Можете да затворите този прозорец и да опитате отново от приложението.</p>`);
+}
+
+function knownApp(redirectUri) {
+  let host;
+  try { host = new URL(redirectUri).hostname; } catch { return null; }
+  const app = KNOWN_APPS.find((a) => a.hosts.some((h) => host === h || host.endsWith("." + h)));
+  return app ? { ...app, host } : { name: null, host };
+}
+
+/** Leaves this page for the app's return address, refusing anything that is not http(s). */
+function goTo(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:" && !(u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname))) {
+      throw new Error("bad scheme");
+    }
+    show(`<h1>Готово</h1><p>Връщане към приложението…</p>`);
+    location.replace(u.href);
+  } catch {
+    showError("Приложението върна невалиден адрес. Достъпът не е даден.");
+  }
+}
+
+async function start() {
+  if (!authorizationId || !/^[A-Za-z0-9\-_.]{8,200}$/.test(authorizationId)) {
+    showError("Тази страница се отваря само от приложение, което иска достъп до Магазинер (липсва authorization_id).");
+    return;
+  }
+  if (!cfg || !cfg.url || !cfg.anonKey) {
+    showError("Страницата не е настроена за този адрес (" + location.hostname + "). Попълнете CONFIGS в oauth/consent/index.html.");
+    return;
+  }
+  if (!window.supabase) {
+    showError("Не успях да заредя библиотеката на Supabase. Проверете връзката и опреснете.");
+    return;
+  }
+  const sb = window.supabase.createClient(cfg.url, cfg.anonKey);
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return showLogin(sb);
+  return showConsent(sb, session);
+}
+
+function showLogin(sb, error = "") {
+  show(`<h1>Вход в Магазинер</h1>
+    <p>Приложение иска достъп до магазина. Първо влезте със своя акаунт в Магазинер.</p>
+    ${error ? `<div class="box err">${esc(error)}</div>` : ""}
+    <form id="login">
+      <label for="email">Имейл</label>
+      <input id="email" type="email" autocomplete="username" required>
+      <label for="password">Парола</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <div class="row"><button class="primary" type="submit" id="loginBtn">Вход</button></div>
+    </form>`);
+  document.getElementById("login").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("loginBtn");
+    btn.disabled = true;
+    const { data, error: err } = await sb.auth.signInWithPassword({
+      email: document.getElementById("email").value.trim(),
+      password: document.getElementById("password").value,
+    });
+    if (err || !data.session) return showLogin(sb, "Грешен имейл или парола.");
+    showConsent(sb, data.session);
+  });
+}
+
+async function showConsent(sb, session) {
+  const { data, error } = await sb.auth.oauth.getAuthorizationDetails(authorizationId);
+  if (error) {
+    showError("Заявката за достъп е изтекла или невалидна. Започнете свързването отначало от приложението.");
+    return;
+  }
+  // Already approved before for the same app and permissions.
+  if (!("authorization_id" in data)) return goTo(data.redirect_url);
+
+  const app = knownApp(data.redirect_uri);
+  const clientName = data.client?.name || data.client?.client_name || "Неизвестно приложение";
+  const recognised = app && app.name;
+
+  show(`<h1>Разрешавате ли достъп?</h1>
+    ${recognised
+      ? `<div class="box ok"><span class="app">${esc(app.name)}</span> иска достъп до Магазинер.</div>`
+      : `<div class="box warn"><b>Внимание:</b> това приложение не е от познатите (Claude, ChatGPT, Gemini).
+           Връща към <code>${esc(app ? app.host : data.redirect_uri)}</code>. Не разрешавайте, ако не сте го свързали вие току-що.</div>`}
+    <p>Приложение: <span class="app">${esc(clientName)}</span><br>
+       <span class="muted">Връща към: <code>${esc(app ? app.host : data.redirect_uri)}</code><br>
+       ID на приложението: <code>${esc(data.client?.id || "")}</code></span></p>
+    <p>Акаунт: <b>${esc(session.user?.email || data.user?.email || "")}</b>
+       <a href="#" id="switch" class="muted">(друг акаунт)</a></p>
+    <p>Ако разрешите, приложението ще може от ваше име да:</p>
+    <ul>
+      <li>вижда касата по дни и приключените дни;</li>
+      <li>търси продукти, цени и наличности;</li>
+      <li>вижда фактури, оферти и клиенти.</li>
+    </ul>
+    <p class="muted">Само четене: нищо не може да се променя или изтрива. Достъпът е само до вашия магазин.
+       Можете да го спрете по всяко време, като махнете връзката (connector) в приложението.</p>
+    <div class="row">
+      <button id="deny">Откажи</button>
+      ${recognised ? `<button class="primary" id="approve">Разреши</button>` : ""}
+    </div>`);
+
+  document.getElementById("switch").addEventListener("click", async (e) => {
+    e.preventDefault();
+    await sb.auth.signOut({ scope: "local" });
+    showLogin(sb);
+  });
+
+  const decide = async (approve) => {
+    root.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+    const call = approve ? sb.auth.oauth.approveAuthorization : sb.auth.oauth.denyAuthorization;
+    const { data: result, error: err } = await call.call(sb.auth.oauth, authorizationId, { skipBrowserRedirect: true });
+    if (err || !result?.redirect_url) {
+      showError("Не успях да запиша избора. Започнете свързването отначало от приложението.");
+      return;
+    }
+    goTo(result.redirect_url);
+  };
+  document.getElementById("deny").addEventListener("click", () => decide(false));
+  if (recognised) document.getElementById("approve").addEventListener("click", () => decide(true));
+}
+
+start().catch((e) => {
+  console.error(e);
+  showError("Възникна неочаквана грешка. Опитайте отново.");
+});
+</script>
+</body>
+</html>
