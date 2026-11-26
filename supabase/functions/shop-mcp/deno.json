@@ -1,0 +1,12 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.119.0",
+    "mcp-lite": "npm:mcp-lite@0.10.0",
+    "zod": "npm:zod@4.1.12",
+    "@std/assert": "jsr:@std/assert@1.0.13"
+  },
+  "tasks": {
+    "test": "deno test --allow-env app_test.ts",
+    "check": "deno check index.ts app_test.ts"
+  }
+}
